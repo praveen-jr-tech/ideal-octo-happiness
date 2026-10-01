@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Campus Wallet admin (test mode)</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #12202b;
+        --muted: #5b6b76;
+        --line: #d7e0e6;
+        --bg: #f4f7f8;
+        --card: #fff;
+        --accent: #0f6c5c;
+        --warn: #8a4b12;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+      }
+      header {
+        padding: 1.25rem 1.5rem;
+        background: var(--ink);
+        color: #fff;
+      }
+      header p { margin: 0.35rem 0 0; color: #c9d6de; }
+      main { padding: 1.5rem; max-width: 1100px; margin: 0 auto; }
+      .banner {
+        background: #fff4e5;
+        color: var(--warn);
+        padding: 0.75rem 1rem;
+        border: 1px solid #f0d3a8;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+      }
+      .row { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: end; margin: 0.75rem 0; }
+      label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; color: var(--muted); }
+      input {
+        padding: 0.45rem 0.55rem;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        min-width: 12rem;
+      }
+      button {
+        background: var(--accent);
+        color: #fff;
+        border: 0;
+        padding: 0.55rem 0.9rem;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 1rem;
+      }
+      .card strong { display: block; font-size: 1.4rem; margin-top: 0.35rem; }
+      table { width: 100%; border-collapse: collapse; background: var(--card); }
+      th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--line); font-size: 0.92rem; }
+      h2 { margin-top: 1.75rem; }
+      .err { color: #9b1c1c; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Campus Wallet admin</h1>
+      <p>Local test mode · fictional accounts only · no payment gateway</p>
+    </header>
+    <main>
+      <div class="banner">
+        Balances are test credits. Do not enter real student names, roll numbers, or live UPI details.
+      </div>
+      <div class="row">
+        <label>Admin key <input id="adminKey" type="password" autocomplete="off" /></label>
+        <button id="load">Load dashboard</button>
+      </div>
+      <p id="status" class="err"></p>
+      <div class="cards" id="summary"></div>
+      <h2>Create merchant</h2>
+      <div class="row">
+        <label>collegeId <input id="mId" value="CANTEEN2" /></label>
+        <label>Name <input id="mName" value="South Stall (demo)" /></label>
+        <label>PIN <input id="mPin" value="1234" /></label>
+        <button id="create">Create</button>
+      </div>
+      <h2>Accounts</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Role</th>
+            <th>College ID</th>
+            <th>Name</th>
+            <th>Frozen</th>
+            <th>Balance</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="accounts"></tbody>
+      </table>
+      <h2>Recent ledger</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Account</th>
+            <th>Type</th>
+            <th>Paise</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody id="ledger"></tbody>
+      </table>
+    </main>
+    <script>
+      const rupees = (paise) => "₹" + (Number(paise) / 100).toFixed(2);
+      const keyInput = document.getElementById("adminKey");
+      keyInput.value = localStorage.getItem("cw_admin_key") || "";
+
+      async function api(path, options = {}) {
+        const key = keyInput.value.trim();
+        localStorage.setItem("cw_admin_key", key);
+        const res = await fetch(path, {
+          ...options,
+          headers: {
+            "Content-Type": "application/json",
+            "x-admin-key": key,
+            ...(options.headers || {}),
+          },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        return data;
+      }
+
+      async function load() {
+        const status = document.getElementById("status");
+        status.textContent = "";
+        try {
+          const summary = await api("/admin/summary");
+          document.getElementById("summary").innerHTML = [
+            ["Students", summary.students],
+            ["Merchants", summary.merchants],
+            ["Frozen", summary.frozen],
+            ["Test top-ups", rupees(summary.testTopupsPaise)],
+            ["QR sales", rupees(summary.qrSalesPaise)],
+          ]
+            .map(([k, v]) => `<div class="card">${k}<strong>${v}</strong></div>`)
+            .join("");
+          const accounts = await api("/admin/accounts");
+          document.getElementById("accounts").innerHTML = accounts.accounts
+            .map(
+              (a) => `<tr>
+                <td>${a.role}</td>
+                <td>${a.collegeId}</td>
+                <td>${a.name}</td>
+                <td>${a.frozen ? "yes" : "no"}</td>
+                <td>${rupees(a.balancePaise)}</td>
+                <td><button data-id="${a.collegeId}" data-frozen="${a.frozen ? "0" : "1"}">
+                  ${a.frozen ? "Unfreeze" : "Freeze"}
+                </button></td>
+              </tr>`
+            )
+            .join("");
+          const ledger = await api("/admin/ledger");
+          document.getElementById("ledger").innerHTML = ledger.entries
+            .map(
+              (e) => `<tr>
+                <td>${new Date(e.created_at).toLocaleString()}</td>
+                <td>${e.college_id} (${e.role})</td>
+                <td>${e.entry_type}</td>
+                <td>${e.amount_paise}</td>
+                <td>${e.note || ""}</td>
+              </tr>`
+            )
+            .join("");
+        } catch (err) {
+          status.textContent = err.message;
+        }
+      }
+
+      document.getElementById("load").onclick = load;
+      document.getElementById("create").onclick = async () => {
+        document.getElementById("status").textContent = "";
+        try {
+          await api("/admin/create-merchant", {
+            method: "POST",
+            body: JSON.stringify({
+              collegeId: document.getElementById("mId").value,
+              name: document.getElementById("mName").value,
+              pin: document.getElementById("mPin").value,
+            }),
+          });
+          await load();
+        } catch (err) {
+          document.getElementById("status").textContent = err.message;
+        }
+      };
+      document.getElementById("accounts").onclick = async (ev) => {
+        const btn = ev.target.closest("button[data-id]");
+        if (!btn) return;
+        try {
+          await api("/admin/freeze", {
+            method: "POST",
+            body: JSON.stringify({
+              collegeId: btn.getAttribute("data-id"),
+              frozen: btn.getAttribute("data-frozen") === "1",
+            }),
+          });
+          await load();
+        } catch (err) {
+          document.getElementById("status").textContent = err.message;
+        }
+      };
+    </script>
+  </body>
+</html>

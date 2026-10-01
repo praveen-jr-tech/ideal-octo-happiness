@@ -1,0 +1,14 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: campus_wallet
+      POSTGRES_USER: campus
+      POSTGRES_PASSWORD: campus_test_only
+    ports:
+      - "5432:5432"
+    volumes:
+      - campus_wallet_pg:/var/lib/postgresql/data
+
+volumes:
+  campus_wallet_pg:
