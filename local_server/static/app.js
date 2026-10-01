@@ -4,6 +4,12 @@ const state = {
   role: null,
 };
 
+const merchantScanner = {
+  active: false,
+  frame: 0,
+  stream: null,
+};
+
 const viewNames = [
   'view-home',
   'view-student-auth',
@@ -32,6 +38,9 @@ function setFlash(msg, kind = 'error') {
 }
 
 function setView(name) {
+  if (name !== 'view-merchant' && merchantScanner.active) {
+    stopMerchantScanner();
+  }
   for (const id of viewNames) {
     const node = document.getElementById(id);
     if (node) node.hidden = id !== name;
@@ -255,6 +264,105 @@ async function chargeMerchant() {
   setFlash('Charge completed.', 'ok');
 }
 
+function stopMerchantScanner(status) {
+  merchantScanner.active = false;
+  cancelAnimationFrame(merchantScanner.frame);
+  if (merchantScanner.stream) {
+    merchantScanner.stream.getTracks().forEach((track) => track.stop());
+    merchantScanner.stream = null;
+  }
+  const video = document.getElementById('m-camera');
+  video.srcObject = null;
+  video.hidden = true;
+  document.getElementById('m-scan-start').hidden = false;
+  document.getElementById('m-scan-stop').hidden = true;
+  if (status) document.getElementById('m-scan-status').textContent = status;
+}
+
+async function startMerchantScanner() {
+  if (!window.isSecureContext) {
+    document.getElementById('m-camera-file').click();
+    document.getElementById('m-scan-status').textContent = 'Take a clear photo of the student QR.';
+    return;
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    document.getElementById('m-camera-file').click();
+    return;
+  }
+  if (!('BarcodeDetector' in window)) {
+    document.getElementById('m-camera-file').click();
+    return;
+  }
+
+  const formats = await BarcodeDetector.getSupportedFormats();
+  if (!formats.includes('qr_code')) {
+    throw new Error('QR scanning is not supported by this browser. Use Chrome on Android or enter the QR text manually.');
+  }
+
+  const detector = new BarcodeDetector({ formats: ['qr_code'] });
+  const video = document.getElementById('m-camera');
+  merchantScanner.stream = await navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: { facingMode: { ideal: 'environment' } },
+  });
+  video.srcObject = merchantScanner.stream;
+  video.hidden = false;
+  await video.play();
+  merchantScanner.active = true;
+  document.getElementById('m-scan-start').hidden = true;
+  document.getElementById('m-scan-stop').hidden = false;
+  document.getElementById('m-scan-status').textContent = 'Point the camera at the student QR.';
+
+  const scanFrame = async () => {
+    if (!merchantScanner.active) return;
+    if (video.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA) {
+      try {
+        const codes = await detector.detect(video);
+        if (codes.length && codes[0].rawValue) {
+          document.getElementById('m-token').value = codes[0].rawValue.trim();
+          stopMerchantScanner('QR scanned. Confirm the amount, then tap Charge.');
+          return;
+        }
+      } catch {
+        stopMerchantScanner('Could not read that QR. Try again or enter its text manually.');
+        return;
+      }
+    }
+    merchantScanner.frame = requestAnimationFrame(scanFrame);
+  };
+  merchantScanner.frame = requestAnimationFrame(scanFrame);
+}
+
+async function scanMerchantPhoto(file) {
+  if (!file) return;
+  if (typeof window.jsQR !== 'function') {
+    throw new Error('QR photo scanning needs an internet connection. You can enter the QR text manually.');
+  }
+
+  const image = await createImageBitmap(file);
+  const scale = Math.min(1, 1600 / Math.max(image.width, image.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(image.width * scale);
+  canvas.height = Math.round(image.height * scale);
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) throw new Error('Could not read the camera photo. Try again or enter the QR text manually.');
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  image.close();
+
+  const result = window.jsQR(
+    context.getImageData(0, 0, canvas.width, canvas.height).data,
+    canvas.width,
+    canvas.height,
+    { inversionAttempts: 'attemptBoth' },
+  );
+  if (!result?.data) {
+    throw new Error('No QR code found in that photo. Try again with the QR clearly in frame.');
+  }
+
+  document.getElementById('m-token').value = result.data.trim();
+  document.getElementById('m-scan-status').textContent = 'QR scanned. Confirm the amount, then tap Charge.';
+}
+
 async function createMerchant() {
   const key = document.getElementById('a-key').value.trim();
   await api('/admin/create-merchant', {
@@ -370,6 +478,31 @@ document.getElementById('m-charge').addEventListener('click', async () => {
     setFlash(e.message);
   }
 });
+
+document.getElementById('m-scan-start').addEventListener('click', async () => {
+  try {
+    await startMerchantScanner();
+  } catch (e) {
+    stopMerchantScanner();
+    setFlash(e.message);
+  }
+});
+
+document.getElementById('m-scan-stop').addEventListener('click', () => {
+  stopMerchantScanner('Camera stopped.');
+});
+
+document.getElementById('m-camera-file').addEventListener('change', async (event) => {
+  try {
+    await scanMerchantPhoto(event.target.files[0]);
+  } catch (e) {
+    document.getElementById('m-scan-status').textContent = e.message;
+  } finally {
+    event.target.value = '';
+  }
+});
+
+window.addEventListener('pagehide', () => stopMerchantScanner());
 
 document.getElementById('s-copy').addEventListener('click', async () => {
   const token = document.getElementById('s-qr-text').textContent;

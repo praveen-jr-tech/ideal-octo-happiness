@@ -52,6 +52,32 @@ Health: http://localhost:3000/health
 Admin UI: http://localhost:3000/admin/  
 Paste the same `ADMIN_KEY` as in `.env`.
 
+## Standalone local demo with phone QR scanning
+
+The Flask/SQLite demo is in `local_server` and does not need PostgreSQL or the Node backend. Install its dependencies:
+
+```powershell
+python -m pip install -r local_server\requirements.txt
+```
+
+First start an HTTP bootstrap server on port 3001:
+
+```powershell
+$env:HTTPS = "false"
+$env:PORT = "3001"
+python local_server\app.py
+```
+
+On Android, while connected to the same Wi-Fi, download `http://<computer IPv4 address>:3001/local-ca.crt`. Install it as a CA certificate in Android's Security settings. Then leave the bootstrap server running and start a second PowerShell terminal for the HTTPS app:
+
+```powershell
+$env:HTTPS = "true"
+$env:PORT = "3000"
+python local_server\app.py
+```
+
+Open `https://<computer IPv4 address>:3000/` on the phone. Log in as the canteen and tap **Scan QR** to grant camera access; the scanner is only available on the canteen checkout. The merchant confirms the amount and taps Charge. The QR decoder loads from jsDelivr, so the phone needs internet access; manual QR text entry remains available if it cannot load.
+
 Create a merchant (README command; replace the key):
 
 ```bash
