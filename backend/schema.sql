@@ -6,9 +6,12 @@ CREATE TABLE IF NOT EXISTS accounts (
   college_id TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
   pin_hash TEXT NOT NULL,
+  photo_data TEXT,
   frozen BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS photo_data TEXT;
 
 CREATE TABLE IF NOT EXISTS ledger_entries (
   id UUID PRIMARY KEY,

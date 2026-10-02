@@ -11,7 +11,7 @@
 ## App
 1. Install Flutter. In `student_app` run `flutter create .` once (adds android/ios folders), then `flutter pub get`
 2. Run `flutter run`. Edit `base` in lib/main.dart if you use a real phone.
-3. Sign up a student, tap "Add ₹100 (test money)", copy the QR text into a second login as CANTEEN1 to charge.
+3. Sign up a student, tap "Add ₹100", copy the QR text into a second login as CANTEEN1 to charge.
 
 Test mode only: no real money until RBI wallet rules are reviewed.
 

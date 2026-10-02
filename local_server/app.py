@@ -168,6 +168,7 @@ def init_db(conn: sqlite3.Connection) -> None:
           college_id TEXT NOT NULL UNIQUE,
           name TEXT NOT NULL,
           pin_hash TEXT NOT NULL,
+                    photo_data TEXT,
           frozen INTEGER NOT NULL DEFAULT 0,
           created_at TEXT NOT NULL
         );
@@ -204,6 +205,10 @@ def ensure_database() -> None:
             init_db(conn)
         else:
             seed_demo(conn)
+        account_columns = {row['name'] for row in conn.execute('PRAGMA table_info(accounts)')}
+        if 'photo_data' not in account_columns:
+            conn.execute('ALTER TABLE accounts ADD COLUMN photo_data TEXT')
+            conn.commit()
     finally:
         conn.close()
 
@@ -311,6 +316,16 @@ def assert_pin(pin: str) -> str:
     return pin
 
 
+def assert_photo_data(photo_data: str | None) -> str | None:
+    if not photo_data:
+        return None
+    if len(photo_data) > 350_000 or not re.fullmatch(
+        r"data:image/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}", photo_data
+    ):
+        raise ApiError(400, "Profile photo must be a small JPEG, PNG, or WebP image")
+    return photo_data
+
+
 def balance_paise(db: sqlite3.Connection, account_id: str) -> int:
     row = db.execute(
         "SELECT COALESCE(SUM(amount_paise), 0) AS balance FROM ledger_entries WHERE account_id = ?",
@@ -325,6 +340,7 @@ def public_account(row: sqlite3.Row, bal: int) -> dict:
         "role": row["role"],
         "collegeId": row["college_id"],
         "name": row["name"],
+        "photoData": row["photo_data"],
         "frozen": bool(row["frozen"]),
         "balancePaise": bal,
         "testMode": True,
@@ -362,8 +378,14 @@ def merchant_auth(fn):
 def admin_auth(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        if request.headers.get("x-admin-key") != ADMIN_KEY:
-            raise ApiError(401, "Invalid admin key")
+        authorization = request.headers.get("Authorization")
+        if authorization:
+            payload = read_token(authorization)
+            if payload.get("role") != "admin":
+                raise ApiError(403, "Wrong account role")
+            g.auth = payload
+        elif not hmac.compare_digest(request.headers.get("x-admin-key", ""), ADMIN_KEY):
+            raise ApiError(401, "Invalid credentials")
         return fn(*args, **kwargs)
 
     return wrapper
@@ -456,6 +478,29 @@ def merchant_login():
     return login_role("merchant")
 
 
+@app.post("/login")
+def unified_login():
+    body = json_body()
+    college_id = assert_college_id(body.get("collegeId", ""))
+    pin = str(body.get("pin") or "")
+    if college_id == "ADMIN":
+        if not hmac.compare_digest(pin, ADMIN_KEY):
+            raise ApiError(401, "Invalid ID or password")
+        admin_account = {"id": "admin", "role": "admin", "college_id": "ADMIN"}
+        return jsonify({"token": sign_token(admin_account), "role": "admin"})
+
+    assert_pin(pin)
+    db = get_db()
+    row = db.execute("SELECT * FROM accounts WHERE college_id = ?", (college_id,)).fetchone()
+    if not row or not verify_pin(pin, row["pin_hash"]):
+        raise ApiError(401, "Invalid ID or password")
+    return jsonify({
+        "token": sign_token(row),
+        "role": row["role"],
+        "account": public_account(row, balance_paise(db, row["id"])),
+    })
+
+
 @app.get("/students/me")
 @student_auth
 def student_me():
@@ -476,7 +521,7 @@ def student_topup():
     body = json_body()
     amount = int(body.get("amountPaise") or 10000)
     if amount <= 0 or amount > 100000:
-        raise ApiError(400, "amountPaise must be 1-100000 in test mode")
+        raise ApiError(400, "amountPaise must be 1-100000")
     db = get_db()
     row = db.execute(
         "SELECT * FROM accounts WHERE id = ? AND role = 'student'", (g.auth["sub"],)
@@ -492,7 +537,7 @@ def student_topup():
             str(uuid.uuid4()),
             row["id"],
             amount,
-            "Local TEST_MODE credit — not real money",
+            "Wallet top-up",
             utcnow(),
         ),
     )
@@ -714,7 +759,7 @@ def admin_summary():
 def admin_accounts():
     db = get_db()
     rows = db.execute(
-        """SELECT a.id, a.role, a.college_id, a.name, a.frozen, a.created_at,
+        """SELECT a.id, a.role, a.college_id, a.name, a.photo_data, a.frozen, a.created_at,
                   COALESCE(SUM(l.amount_paise), 0) AS balance_paise
            FROM accounts a
            LEFT JOIN ledger_entries l ON l.account_id = a.id
@@ -729,6 +774,7 @@ def admin_accounts():
                     "role": r["role"],
                     "collegeId": r["college_id"],
                     "name": r["name"],
+                    "photoData": r["photo_data"],
                     "frozen": bool(r["frozen"]),
                     "balancePaise": int(r["balance_paise"]),
                     "createdAt": r["created_at"],
@@ -737,6 +783,59 @@ def admin_accounts():
             ]
         }
     )
+
+
+@app.route("/admin/accounts", methods=["POST", "PATCH"])
+@admin_auth
+def admin_save_account():
+    body = json_body()
+    college_id = assert_college_id(body.get("collegeId", ""))
+    role = str(body.get("role") or "").lower()
+    if role not in {"student", "merchant"}:
+        raise ApiError(400, "Choose Student or Canteen")
+    name = str(body.get("name") or "").strip()
+    if not 2 <= len(name) <= 80:
+        raise ApiError(400, "Name must be 2-80 characters")
+
+    db = get_db()
+    existing = db.execute("SELECT * FROM accounts WHERE college_id = ?", (college_id,)).fetchone()
+    pin = str(body.get("pin") or "")
+    if not existing and not pin:
+        raise ApiError(400, "Password is required for a new account")
+    if pin:
+        assert_pin(pin)
+    photo_data = assert_photo_data(body.get("photoData", existing["photo_data"] if existing else None))
+
+    try:
+        if existing:
+            if existing["role"] != role:
+                has_history = db.execute(
+                    "SELECT 1 FROM ledger_entries WHERE account_id = ? LIMIT 1", (existing["id"],)
+                ).fetchone()
+                has_qr = db.execute(
+                    "SELECT 1 FROM qr_tokens WHERE student_id = ? LIMIT 1", (existing["id"],)
+                ).fetchone()
+                if has_history or has_qr:
+                    raise ApiError(409, "Account type cannot change after wallet activity")
+            db.execute(
+                "UPDATE accounts SET role = ?, name = ?, pin_hash = ?, photo_data = ? WHERE id = ?",
+                (role, name, hash_pin(pin) if pin else existing["pin_hash"], photo_data, existing["id"]),
+            )
+            account_id = existing["id"]
+        else:
+            account_id = str(uuid.uuid4())
+            db.execute(
+                """INSERT INTO accounts (id, role, college_id, name, pin_hash, photo_data, frozen, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, 0, ?)""",
+                (account_id, role, college_id, name, hash_pin(pin), photo_data, utcnow()),
+            )
+    except sqlite3.IntegrityError as exc:
+        raise ApiError(409, "ID already exists") from exc
+    db.commit()
+    return jsonify({"ok": True, "account": {
+        "id": account_id, "role": role, "collegeId": college_id, "name": name,
+        "photoData": photo_data,
+    }})
 
 
 @app.get("/admin/ledger")

@@ -17,6 +17,7 @@ function publicAccount(row, balancePaise) {
     role: row.role,
     collegeId: row.college_id,
     name: row.name,
+    photoData: row.photo_data || null,
     frozen: row.frozen,
     balancePaise,
     testMode: true,
@@ -25,6 +26,26 @@ function publicAccount(row, balancePaise) {
 
 function mountStudentRoutes(app, { pool, config }) {
   const studentAuth = authRequired(config, "student");
+
+  app.post(
+    "/login",
+    asyncHandler(async (req, res) => {
+      const { collegeId, pin } = req.body || {};
+      assertCollegeId(collegeId);
+      if (collegeId.toUpperCase() === "ADMIN") {
+        if (String(pin || "") !== config.adminKey) throw new HttpError(401, "Invalid ID or password");
+        const admin = { id: "admin", role: "admin", college_id: "ADMIN" };
+        return res.json({ token: signToken(config, admin), role: "admin" });
+      }
+      assertPinFormat(pin);
+      const { rows } = await pool.query("SELECT * FROM accounts WHERE college_id = $1", [collegeId.toUpperCase()]);
+      if (!rows[0] || !verifyPin(pin, rows[0].pin_hash)) {
+        throw new HttpError(401, "Invalid ID or password");
+      }
+      const balancePaise = await getBalancePaise(pool, rows[0].id);
+      res.json({ token: signToken(config, rows[0]), role: rows[0].role, account: publicAccount(rows[0], balancePaise) });
+    })
+  );
 
   app.post(
     "/students/signup",
@@ -95,7 +116,7 @@ function mountStudentRoutes(app, { pool, config }) {
       }
       const amountPaise = Number((req.body && req.body.amountPaise) || 10000);
       if (!Number.isInteger(amountPaise) || amountPaise <= 0 || amountPaise > 100000) {
-        throw new HttpError(400, "amountPaise must be 1-100000 in test mode");
+        throw new HttpError(400, "amountPaise must be 1-100000");
       }
       const { rows } = await pool.query("SELECT * FROM accounts WHERE id = $1 AND role = 'student'", [
         req.auth.sub,
@@ -107,7 +128,7 @@ function mountStudentRoutes(app, { pool, config }) {
         accountId: rows[0].id,
         amountPaise,
         entryType: "test_topup",
-        note: "Local TEST_MODE credit — not real money",
+        note: "Wallet top-up",
       });
       const balancePaise = await getBalancePaise(pool, rows[0].id);
       res.json({ ok: true, creditedPaise: amountPaise, account: publicAccount(rows[0], balancePaise) });

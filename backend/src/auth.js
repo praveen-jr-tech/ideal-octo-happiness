@@ -54,6 +54,17 @@ function authRequired(config, role) {
 
 function adminRequired(config) {
   return (req, _res, next) => {
+    const authorization = req.headers.authorization || "";
+    if (authorization.startsWith("Bearer ")) {
+      try {
+        const payload = jwt.verify(authorization.slice(7), config.jwtSecret);
+        if (payload.role !== "admin") return next(new HttpError(403, "Wrong account role"));
+        req.auth = payload;
+        return next();
+      } catch (_err) {
+        return next(new HttpError(401, "Invalid or expired token"));
+      }
+    }
     const key = req.headers["x-admin-key"];
     if (!key || key !== config.adminKey) {
       return next(new HttpError(401, "Invalid admin key"));

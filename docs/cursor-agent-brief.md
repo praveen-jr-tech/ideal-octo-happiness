@@ -43,7 +43,7 @@ College shortcut (Flutter + Firebase) is **not** used for V1; PostgreSQL ledger 
 
 - Sign up / log in with a synthetic college ID + PIN.
 - See balance and ledger/statement.
-- Tap **Add ₹100 (test money)** — server credits a `test_topup` ledger line only when `TEST_MODE=true`.
+- Tap **Add ₹100** — server credits a `test_topup` ledger line only when `TEST_MODE=true`.
 - Show a **temporary QR** (token TTL ~45s). Staff can also paste the QR text.
 - **Freeze account** from the phone (blocks pay). Unfreeze requires PIN.
 
@@ -96,7 +96,7 @@ Auth: `Authorization: Bearer <jwt>`. Admin: `x-admin-key`.
 ## Acceptance (local MVP)
 
 1. `psql` applies `backend/schema.sql`; seed creates **only fictional** users.
-2. Student signs up (or uses `STU1001` / `1234`), adds ₹100 test money, sees QR.
+2. Student signs up (or uses `STU1001` / `1234`), adds ₹100, sees QR.
 3. Merchant `CANTEEN1` / `1234` charges using QR text; student balance drops; both ledgers show the same payment.
 4. Freeze blocks a subsequent charge.
 5. Admin dashboard loads with the admin key.

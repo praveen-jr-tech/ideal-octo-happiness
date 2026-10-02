@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -19,7 +20,7 @@ class CampusWalletApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Campus Wallet (test)',
+      title: 'Campus Wallet',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0F6C5C)),
         useMaterial3: true,
@@ -29,56 +30,173 @@ class CampusWalletApp extends StatelessWidget {
   }
 }
 
-class RoleScreen extends StatelessWidget {
+class RoleScreen extends StatefulWidget {
   const RoleScreen({super.key});
+
+  @override
+  State<RoleScreen> createState() => _RoleScreenState();
+}
+
+class _RoleScreenState extends State<RoleScreen> {
+  final collegeId = TextEditingController();
+  final password = TextEditingController();
+  bool busy = false;
+  String? error;
+
+  Future<void> signIn() async {
+    setState(() {
+      busy = true;
+      error = null;
+    });
+    try {
+      final data = await api.post('/login', {
+        'collegeId': collegeId.text.trim(),
+        'pin': password.text,
+      });
+      await api.saveToken(data['token'] as String);
+      if (!mounted) return;
+      final Widget screen = switch (data['role']) {
+        'student' => const StudentHomeScreen(),
+        'merchant' => const MerchantHomeScreen(),
+        'admin' => const AdminHomeScreen(),
+        _ => throw ApiException('Account could not be opened'),
+      };
+      Navigator.pushReplacement(context, MaterialPageRoute<void>(builder: (_) => screen));
+    } catch (e) {
+      setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Campus Wallet')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          const _TestBanner(),
-          const SizedBox(height: 12),
-          Text('API: $apiBase', style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 20),
-          FilledButton(
-            onPressed: () {
-              Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const StudentAuthScreen()));
-            },
-            child: const Text('Student'),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: ListView(
+            padding: const EdgeInsets.all(20),
+            shrinkWrap: true,
+            children: [
+              Text('Welcome back', style: Theme.of(context).textTheme.headlineMedium),
+              const SizedBox(height: 24),
+              TextField(
+                controller: collegeId,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(labelText: 'ID'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: password,
+                obscureText: true,
+                onSubmitted: (_) => signIn(),
+                decoration: const InputDecoration(labelText: 'Password'),
+              ),
+              if (error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(error!, style: const TextStyle(color: Colors.red))),
+              const SizedBox(height: 20),
+              FilledButton(onPressed: busy ? null : signIn, child: const Text('Continue')),
+            ],
           ),
-          const SizedBox(height: 8),
-          OutlinedButton(
-            onPressed: () {
-              Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const MerchantAuthScreen()));
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    collegeId.dispose();
+    password.dispose();
+    super.dispose();
+  }
+}
+
+class AdminHomeScreen extends StatefulWidget {
+  const AdminHomeScreen({super.key});
+
+  @override
+  State<AdminHomeScreen> createState() => _AdminHomeScreenState();
+}
+
+class _AdminHomeScreenState extends State<AdminHomeScreen> {
+  List<dynamic> accounts = [];
+  String? error;
+
+  Future<void> refresh() async {
+    try {
+      final result = await api.get('/admin/accounts');
+      setState(() {
+        accounts = result['accounts'] as List<dynamic>? ?? [];
+        error = null;
+      });
+    } catch (e) {
+      setState(() => error = e.toString());
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    refresh();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Accounts'),
+        actions: [
+          IconButton(
+            onPressed: () async {
+              await api.clearToken();
+              if (!context.mounted) return;
+              Navigator.popUntil(context, (route) => route.isFirst);
             },
-            child: const Text('Canteen / merchant'),
+            icon: const Icon(Icons.logout),
           ),
         ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: refresh,
+        child: ListView(
+          children: [
+            if (error != null) Padding(padding: const EdgeInsets.all(16), child: Text(error!, style: const TextStyle(color: Colors.red))),
+            for (final account in accounts)
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundImage: profilePhoto(account['photoData']),
+                  child: profilePhoto(account['photoData']) == null ? const Icon(Icons.person_outline) : null,
+                ),
+                title: Text(account['name']?.toString() ?? ''),
+                subtitle: Text('${account['role'] == 'merchant' ? 'Canteen' : 'Student'} · ${account['collegeId']}'),
+              ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _TestBanner extends StatelessWidget {
-  const _TestBanner();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF4E5),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFF0D3A8)),
-      ),
-      child: const Text(
-        'TEST MODE — fake rupees, fictional IDs only (STU1001 / CANTEEN1). Not real money.',
-      ),
-    );
+ImageProvider<Object>? profilePhoto(dynamic data) {
+  if (data is! String || !data.startsWith('data:image/')) return null;
+  final separator = data.indexOf(',');
+  if (separator < 0) return null;
+  try {
+    return MemoryImage(base64Decode(data.substring(separator + 1)));
+  } on FormatException {
+    return null;
   }
+}
+
+String ledgerTypeLabel(dynamic type) {
+  if (type == 'test_topup') return 'Top-up';
+  if (type == 'qr_sale') return 'QR sale';
+  return '$type'.replaceAll('_', ' ');
+}
+
+String ledgerNote(dynamic entry) {
+  return entry['entry_type'] == 'test_topup' ? '' : '${entry['note'] ?? ''}';
 }
 
 class StudentAuthScreen extends StatefulWidget {
@@ -90,7 +208,7 @@ class StudentAuthScreen extends StatefulWidget {
 
 class _StudentAuthScreenState extends State<StudentAuthScreen> {
   final collegeId = TextEditingController(text: 'STU1001');
-  final name = TextEditingController(text: 'Alex Test');
+  final name = TextEditingController(text: 'Alex');
   final pin = TextEditingController(text: '1234');
   bool busy = false;
   String? error;
@@ -130,7 +248,6 @@ class _StudentAuthScreenState extends State<StudentAuthScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          const _TestBanner(),
           TextField(controller: collegeId, decoration: const InputDecoration(labelText: 'College ID')),
           TextField(controller: name, decoration: const InputDecoration(labelText: 'Name (signup only)')),
           TextField(
@@ -162,7 +279,7 @@ class _StudentAuthScreenState extends State<StudentAuthScreen> {
                         'pin': pin.text.trim(),
                       }),
                     ),
-            child: const Text('Sign up (demo)'),
+            child: const Text('Sign up'),
           ),
         ],
       ),
@@ -268,6 +385,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final token = qr?['token']?.toString() ?? '';
+    final avatar = profilePhoto(me?['photoData']);
     return Scaffold(
       appBar: AppBar(
         title: Text(me?['collegeId']?.toString() ?? 'Student'),
@@ -287,13 +405,29 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            const _TestBanner(),
             if (error != null) Text(error!, style: const TextStyle(color: Colors.red)),
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 30,
+                  backgroundImage: avatar,
+                  child: avatar == null ? const Icon(Icons.person_outline) : null,
+                ),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(me?['name']?.toString() ?? 'Student', style: Theme.of(context).textTheme.titleMedium),
+                    Text(me?['collegeId']?.toString() ?? '', style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
             Text(rupees(me?['balancePaise']), style: Theme.of(context).textTheme.headlineMedium),
-            Text(me?['frozen'] == true ? 'FROZEN' : 'Active test wallet'),
+            Text(me?['frozen'] == true ? 'FROZEN' : 'Active'),
             const SizedBox(height: 12),
-            FilledButton(onPressed: topup, child: const Text('Add ₹100 (test money)')),
+            FilledButton(onPressed: topup, child: const Text('Add ₹100')),
             OutlinedButton(onPressed: toggleFreeze, child: Text(me?['frozen'] == true ? 'Unfreeze' : 'Freeze account')),
             const SizedBox(height: 16),
             if (token.isNotEmpty) ...[
@@ -313,8 +447,8 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
             for (final row in ledger)
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: Text('${row['entry_type']}  ${row['amount_paise']} paise'),
-                subtitle: Text('${row['note'] ?? ''}  ${row['created_at']}'),
+                title: Text('${ledgerTypeLabel(row['entry_type'])}  ${row['amount_paise']} paise'),
+                subtitle: Text([ledgerNote(row), '${row['created_at']}'].where((value) => value.isNotEmpty).join(' · ')),
               ),
           ],
         ),
@@ -358,7 +492,6 @@ class _MerchantAuthScreenState extends State<MerchantAuthScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          const _TestBanner(),
           TextField(controller: collegeId, decoration: const InputDecoration(labelText: 'Merchant college ID')),
           TextField(controller: pin, obscureText: true, decoration: const InputDecoration(labelText: 'PIN')),
           if (error != null) Text(error!, style: const TextStyle(color: Colors.red)),
@@ -472,7 +605,6 @@ class _MerchantHomeScreenState extends State<MerchantHomeScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          const _TestBanner(),
           Text('Sales balance: ₹${(Money.paise(me?['balancePaise']) / 100).toStringAsFixed(2)}'),
           if (error != null) Text(error!, style: const TextStyle(color: Colors.red)),
           TextField(
@@ -487,14 +619,14 @@ class _MerchantHomeScreenState extends State<MerchantHomeScreen> {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
           ),
           const SizedBox(height: 8),
-          FilledButton(onPressed: charge, child: const Text('Charge (test)')),
+          FilledButton(onPressed: charge, child: const Text('Charge')),
           const SizedBox(height: 16),
           Text('Sales history', style: Theme.of(context).textTheme.titleMedium),
           for (final row in ledger)
             ListTile(
               contentPadding: EdgeInsets.zero,
-              title: Text('${row['entry_type']}  ${row['amount_paise']} paise'),
-              subtitle: Text('${row['note'] ?? ''}'),
+                title: Text('${ledgerTypeLabel(row['entry_type'])}  ${row['amount_paise']} paise'),
+                subtitle: Text(ledgerNote(row)),
             ),
         ],
       ),

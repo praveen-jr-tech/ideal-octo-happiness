@@ -111,7 +111,7 @@ flutter run
 - Android emulator: `http://10.0.2.2:3000`
 - Physical phone: your PC’s LAN IP, and allow that origin through any firewall.
 
-Flow: sign up or log in as `STU1001` → Add ₹100 (test money) → copy QR text → log in as canteen `CANTEEN1` → charge.
+Flow: sign up or log in as `STU1001` → Add ₹100 → copy QR text → log in as canteen `CANTEEN1` → charge.
 
 ## What not to do
 
