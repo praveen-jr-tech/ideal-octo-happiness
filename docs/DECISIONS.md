@@ -2,10 +2,10 @@
 
 ## Product
 
-- **Ship Version 1 only.** Plans, withdrawals, events, NFC, and real recharge stay documented, not coded.
+- **Ship Version 1 only.** Plans, withdrawals, events, and real recharge stay documented, not coded.
 - **Test top-up is a ledger credit**, not a payment. `TEST_MODE` must be true or the route returns 403.
-- **QR first, NFC later.** Tokens expire (~45s) and are bound to one student. Charging does not “use up” the token immediately so a refresh race does not brick checkout; expiry still limits replay.
-- **Freeze is a full pay block** for the student (V1 has no transfers/withdrawals to block yet).
+- **QR and Android NFC are test-only.** QR tokens are short-lived and student-bound. NFC uses a separate random, hashed-at-rest, two-minute one-use session token; server-side limits are ₹500 per tap and ₹2,000 per sender per UTC day.
+- **Freeze is a full pay block** for the student, including QR, friend, and NFC transfers.
 - **Admin dashboard is static HTML** served by Express (`/admin/`). The deck suggests React; a second SPA toolchain is deferred so local setup stays Node + Postgres + Flutter.
 
 ## Data and money

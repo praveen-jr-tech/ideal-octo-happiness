@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Campus Wallet</string>
+    <string name="nfc_service_description">Campus Wallet test payment</string>
+</resources>

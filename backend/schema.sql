@@ -36,3 +36,13 @@ CREATE TABLE IF NOT EXISTS qr_tokens (
 
 CREATE INDEX IF NOT EXISTS qr_tokens_student_idx ON qr_tokens (student_id);
 CREATE INDEX IF NOT EXISTS qr_tokens_token_idx ON qr_tokens (token);
+
+CREATE TABLE IF NOT EXISTS nfc_sessions (
+  token_hash TEXT PRIMARY KEY,
+  student_id UUID NOT NULL REFERENCES accounts (id),
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS nfc_sessions_student_idx ON nfc_sessions (student_id);
+CREATE INDEX IF NOT EXISTS nfc_sessions_expiry_idx ON nfc_sessions (expires_at);

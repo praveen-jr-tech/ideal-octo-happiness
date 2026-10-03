@@ -188,6 +188,12 @@ def init_db(conn: sqlite3.Connection) -> None:
           expires_at TEXT NOT NULL,
           created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS nfc_sessions (
+          token_hash TEXT PRIMARY KEY,
+          student_id TEXT NOT NULL REFERENCES accounts (id),
+          expires_at TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
         """
     )
     conn.commit()
@@ -209,6 +215,15 @@ def ensure_database() -> None:
         if 'photo_data' not in account_columns:
             conn.execute('ALTER TABLE accounts ADD COLUMN photo_data TEXT')
             conn.commit()
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS nfc_sessions (
+                 token_hash TEXT PRIMARY KEY,
+                 student_id TEXT NOT NULL REFERENCES accounts (id),
+                 expires_at TEXT NOT NULL,
+                 created_at TEXT NOT NULL
+               )"""
+        )
+        conn.commit()
     finally:
         conn.close()
 
@@ -537,6 +552,140 @@ def student_directory():
             }
             for row in rows
         ]
+    })
+
+
+@app.post("/students/nfc/session")
+@student_auth
+def student_nfc_session():
+    if not TEST_MODE:
+        raise ApiError(403, "NFC transfers are available only in local test mode")
+    db = get_db()
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    created = datetime.now(timezone.utc)
+    expires = created + timedelta(minutes=2)
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        student = db.execute(
+            "SELECT id, frozen FROM accounts WHERE id = ? AND role = 'student'",
+            (g.auth["sub"],),
+        ).fetchone()
+        if not student:
+            raise ApiError(404, "Student not found")
+        if student["frozen"]:
+            raise ApiError(403, "Your wallet is frozen")
+        db.execute("DELETE FROM nfc_sessions WHERE expires_at <= ?", (created.isoformat(),))
+        db.execute("DELETE FROM nfc_sessions WHERE student_id = ?", (student["id"],))
+        db.execute(
+            """INSERT INTO nfc_sessions (token_hash, student_id, expires_at, created_at)
+               VALUES (?, ?, ?, ?)""",
+            (token_hash, student["id"], expires.isoformat(), created.isoformat()),
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return jsonify({"token": token, "expiresAt": expires.isoformat()})
+
+
+@app.post("/students/nfc/transfer")
+@student_auth
+def student_nfc_transfer():
+    if not TEST_MODE:
+        raise ApiError(403, "NFC transfers are available only in local test mode")
+    body = json_body()
+    recipient_token = body.get("recipientToken")
+    if not isinstance(recipient_token, str) or not 20 <= len(recipient_token) <= 100:
+        raise ApiError(400, "recipientToken is invalid")
+    raw_amount = body.get("amountPaise")
+    try:
+        amount = int(raw_amount)
+    except (TypeError, ValueError) as exc:
+        raise ApiError(400, "amountPaise must be a positive integer") from exc
+    if isinstance(raw_amount, bool) or amount <= 0 or amount != raw_amount:
+        raise ApiError(400, "amountPaise must be a positive integer")
+    if amount > 50_000:
+        raise ApiError(400, "NFC transfers are limited to ₹500 per tap")
+    note = str(body.get("note") or "").strip()
+    if len(note) > 100:
+        raise ApiError(400, "note must be 100 characters or fewer")
+
+    token_hash = hashlib.sha256(recipient_token.encode()).hexdigest()
+    db = get_db()
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        session = db.execute(
+            "SELECT * FROM nfc_sessions WHERE token_hash = ?",
+            (token_hash,),
+        ).fetchone()
+        now = datetime.now(timezone.utc)
+        if not session or datetime.fromisoformat(session["expires_at"]) <= now:
+            raise ApiError(410, "NFC receive session expired; ask the recipient to tap again")
+
+        sender = db.execute(
+            "SELECT * FROM accounts WHERE id = ? AND role = 'student'",
+            (g.auth["sub"],),
+        ).fetchone()
+        recipient = db.execute(
+            "SELECT * FROM accounts WHERE id = ? AND role = 'student'",
+            (session["student_id"],),
+        ).fetchone()
+        if not sender or not recipient:
+            raise ApiError(404, "Student not found")
+        if sender["frozen"]:
+            raise ApiError(403, "Your wallet is frozen")
+        if recipient["frozen"]:
+            raise ApiError(403, "That student's wallet is frozen")
+        if sender["id"] == recipient["id"]:
+            raise ApiError(400, "You cannot send money to yourself")
+
+        spent_today = db.execute(
+            """SELECT COALESCE(SUM(-amount_paise), 0) AS total
+               FROM ledger_entries
+               WHERE account_id = ? AND entry_type = 'nfc_transfer_out'
+                 AND date(created_at) = date('now')""",
+            (sender["id"],),
+        ).fetchone()["total"]
+        if spent_today + amount > 200_000:
+            raise ApiError(400, "NFC transfers are limited to ₹2,000 per day")
+
+        sender_balance = balance_paise(db, sender["id"])
+        if sender_balance < amount:
+            raise ApiError(400, "Insufficient test balance")
+
+        created_at = utcnow()
+        db.executemany(
+            """INSERT INTO ledger_entries
+               (id, account_id, amount_paise, entry_type, related_account_id, note, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            [
+                (
+                    str(uuid.uuid4()), sender["id"], -amount, "nfc_transfer_out",
+                    recipient["id"], f"To {recipient['name']} · NFC",
+                    created_at,
+                ),
+                (
+                    str(uuid.uuid4()), recipient["id"], amount, "nfc_transfer_in",
+                    sender["id"], f"From {sender['name']} · NFC",
+                    created_at,
+                ),
+            ],
+        )
+        db.execute("DELETE FROM nfc_sessions WHERE token_hash = ?", (token_hash,))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return jsonify({
+        "ok": True,
+        "amountPaise": amount,
+        "recipient": {
+            "collegeId": recipient["college_id"],
+            "name": recipient["name"],
+        },
+        "balancePaise": balance_paise(db, sender["id"]),
     })
 
 

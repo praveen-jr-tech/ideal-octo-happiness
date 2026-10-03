@@ -97,6 +97,8 @@ function ledgerTypeLabel(entryType) {
   if (entryType === 'qr_sale') return 'QR sale';
   if (entryType === 'student_transfer_out') return 'Sent to friend';
   if (entryType === 'student_transfer_in') return 'Received from friend';
+  if (entryType === 'nfc_transfer_out') return 'Sent by NFC';
+  if (entryType === 'nfc_transfer_in') return 'Received by NFC';
   return entryType;
 }
 
@@ -156,9 +158,12 @@ function renderStudentTransactions() {
   const list = document.getElementById('s-ledger');
   const filter = document.querySelector('[data-ledger-filter].active')?.dataset.ledgerFilter || 'all';
   const filtered = studentLedgerEntries.filter((entry) => {
-    if (filter === 'sent') return entry.entry_type === 'student_transfer_out';
-    if (filter === 'received') return entry.entry_type === 'student_transfer_in';
-    if (filter === 'wallet') return !['student_transfer_out', 'student_transfer_in'].includes(entry.entry_type);
+    if (filter === 'sent') return ['student_transfer_out', 'nfc_transfer_out'].includes(entry.entry_type);
+    if (filter === 'received') return ['student_transfer_in', 'nfc_transfer_in'].includes(entry.entry_type);
+    if (filter === 'wallet') {
+      return !['student_transfer_out', 'student_transfer_in', 'nfc_transfer_out', 'nfc_transfer_in']
+        .includes(entry.entry_type);
+    }
     return true;
   });
   list.replaceChildren();
@@ -185,7 +190,8 @@ function renderStudentTransactions() {
     list.appendChild(row);
   }
 
-  const sentEntries = studentLedgerEntries.filter((entry) => entry.entry_type === 'student_transfer_out');
+  const sentEntries = studentLedgerEntries.filter((entry) =>
+    ['student_transfer_out', 'nfc_transfer_out'].includes(entry.entry_type));
   const sentTotal = sentEntries.reduce((sum, entry) => sum + Math.abs(entry.amount_paise), 0);
   document.getElementById('transaction-summary').replaceChildren();
   const summaryLabel = document.createElement('span');

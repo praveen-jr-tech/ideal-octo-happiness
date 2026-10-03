@@ -5,7 +5,6 @@ node_modules/
 data/
 *.sqlite
 *.sqlite-journal
-student_app/android/
 student_app/ios/
 student_app/linux/
 student_app/macos/

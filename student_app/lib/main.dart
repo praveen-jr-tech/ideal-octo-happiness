@@ -13,6 +13,8 @@ void main() {
 }
 
 final api = CampusApi();
+const _nfcChannel = MethodChannel('campus_wallet/nfc');
+const _nfcEvents = EventChannel('campus_wallet/nfc_events');
 
 class CampusWalletApp extends StatelessWidget {
   const CampusWalletApp({super.key});
@@ -192,6 +194,8 @@ ImageProvider<Object>? profilePhoto(dynamic data) {
 String ledgerTypeLabel(dynamic type) {
   if (type == 'test_topup') return 'Top-up';
   if (type == 'qr_sale') return 'QR sale';
+  if (type == 'nfc_transfer_out') return 'NFC payment sent';
+  if (type == 'nfc_transfer_in') return 'NFC payment received';
   return '$type'.replaceAll('_', ' ');
 }
 
@@ -300,8 +304,170 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   List<dynamic> ledger = [];
   String? error;
   Timer? _qrTimer;
+  Timer? _receiveExpiryTimer;
+  bool nfcAvailable = false;
+  bool nfcHostCardEmulationAvailable = false;
+  bool nfcBusy = false;
+  String? nfcStatus;
+  bool receivingByNfc = false;
 
   String rupees(dynamic paise) => '₹${(Money.paise(paise) / 100).toStringAsFixed(2)}';
+
+  Future<void> checkNfcCapabilities() async {
+    try {
+      final capabilities = await _nfcChannel.invokeMapMethod<String, bool>('capabilities');
+      if (!mounted) return;
+      setState(() {
+        nfcAvailable = capabilities?['reader'] == true;
+        nfcHostCardEmulationAvailable = capabilities?['hostCardEmulation'] == true;
+      });
+    } on PlatformException catch (e) {
+      if (mounted) setState(() => nfcStatus = e.message ?? 'Could not check NFC support');
+    }
+  }
+
+  Future<void> startNfcReceive() async {
+    setState(() {
+      nfcBusy = true;
+      nfcStatus = null;
+    });
+    try {
+      if (!nfcHostCardEmulationAvailable) {
+        throw ApiException('This Android phone cannot receive NFC taps');
+      }
+      final session = await api.post('/students/nfc/session', {});
+      await _nfcChannel.invokeMethod<void>('setReceiveToken', session['token']);
+      _receiveExpiryTimer?.cancel();
+      _receiveExpiryTimer = Timer(const Duration(minutes: 2), () {
+        if (!mounted) return;
+        _nfcChannel.invokeMethod<void>('clearReceiveToken');
+        setState(() {
+          receivingByNfc = false;
+          nfcStatus = 'NFC receive session expired. Start a new one to receive.';
+        });
+      });
+      setState(() {
+        receivingByNfc = true;
+        nfcStatus = 'Ready to receive one tap payment for 2 minutes.';
+      });
+    } catch (e) {
+      setState(() => nfcStatus = e.toString());
+    } finally {
+      if (mounted) setState(() => nfcBusy = false);
+    }
+  }
+
+  Future<void> stopNfcReceive() async {
+    _receiveExpiryTimer?.cancel();
+    try {
+      await _nfcChannel.invokeMethod<void>('clearReceiveToken');
+      if (mounted) setState(() => receivingByNfc = false);
+    } on PlatformException catch (e) {
+      if (mounted) setState(() => nfcStatus = e.message ?? 'Could not stop NFC receive mode');
+    }
+  }
+
+  Future<int?> requestNfcAmount() async {
+    final controller = TextEditingController();
+    String? amountError;
+    try {
+      return await showDialog<int>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            title: const Text('Send by NFC'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Enter an amount up to ₹500. No PIN is needed.'),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: 'Amount in rupees',
+                    prefixText: '₹ ',
+                    errorText: amountError,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final rupeeAmount = double.tryParse(controller.text.trim());
+                  final paise = rupeeAmount == null ? null : (rupeeAmount * 100).round();
+                  if (rupeeAmount == null ||
+                      !rupeeAmount.isFinite ||
+                      rupeeAmount <= 0 ||
+                      paise == null ||
+                      (rupeeAmount * 100 - paise).abs() > 0.000001 ||
+                      paise > 50000) {
+                    setDialogState(() => amountError = 'Enter an amount from ₹0.01 to ₹500.00');
+                    return;
+                  }
+                  Navigator.pop(dialogContext, paise);
+                },
+                child: const Text('Tap to send'),
+              ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  Future<void> sendByNfc() async {
+    if (nfcBusy) return;
+    final amountPaise = await requestNfcAmount();
+    if (amountPaise == null || !mounted) return;
+    setState(() {
+      nfcBusy = true;
+      nfcStatus = 'Hold the phones together to read the recipient.';
+    });
+    final tokenCompleter = Completer<dynamic>();
+    final nfcSubscription = _nfcEvents.receiveBroadcastStream().listen(
+      tokenCompleter.complete,
+      onError: tokenCompleter.completeError,
+    );
+    try {
+      if (!nfcAvailable) throw ApiException('NFC reader is not available on this device');
+      await _nfcChannel.invokeMethod<void>('startReader');
+      final recipientToken = await tokenCompleter.future.timeout(const Duration(seconds: 45));
+      if (recipientToken is! String || recipientToken.isEmpty) {
+        throw ApiException('The NFC tap did not contain a valid receive session');
+      }
+      final result = await api.post('/students/nfc/transfer', {
+        'recipientToken': recipientToken,
+        'amountPaise': amountPaise,
+      });
+      if (!mounted) return;
+      setState(() {
+        nfcStatus = 'Sent ${rupees(result['amountPaise'])} to ${result['recipient']['name']}.';
+      });
+      await refresh();
+    } catch (e) {
+      if (mounted) setState(() => nfcStatus = e.toString());
+    } finally {
+      await nfcSubscription.cancel();
+      try {
+        await _nfcChannel.invokeMethod<void>('stopReader');
+      } on PlatformException catch (e) {
+        if (mounted && nfcStatus == null) {
+          setState(() => nfcStatus = e.message ?? 'Could not stop NFC reader');
+        }
+      }
+      if (mounted) setState(() => nfcBusy = false);
+    }
+  }
 
   Future<void> refresh() async {
     try {
@@ -371,6 +537,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   void initState() {
     super.initState();
     api.loadToken().then((_) => refresh());
+    checkNfcCapabilities();
     _qrTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (me?['frozen'] != true) loadQr();
     });
@@ -379,6 +546,8 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   @override
   void dispose() {
     _qrTimer?.cancel();
+    _receiveExpiryTimer?.cancel();
+    _nfcChannel.invokeMethod<void>('clearReceiveToken');
     super.dispose();
   }
 
@@ -429,6 +598,34 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
             const SizedBox(height: 12),
             FilledButton(onPressed: topup, child: const Text('Add ₹100')),
             OutlinedButton(onPressed: toggleFreeze, child: Text(me?['frozen'] == true ? 'Unfreeze' : 'Freeze account')),
+            const SizedBox(height: 16),
+            Text('NFC tap to pay', style: Theme.of(context).textTheme.titleMedium),
+            Text('Test-wallet transfers only · up to ₹500 per tap · ₹2,000 per day · no PIN'),
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              onPressed: nfcBusy || me?['frozen'] == true ? null : sendByNfc,
+              icon: const Icon(Icons.nfc),
+              label: Text(nfcBusy ? 'Waiting for tap…' : 'Send by tap'),
+            ),
+            OutlinedButton.icon(
+              onPressed: nfcBusy || me?['frozen'] == true
+                  ? null
+                  : receivingByNfc
+                      ? stopNfcReceive
+                      : startNfcReceive,
+              icon: Icon(receivingByNfc ? Icons.stop_circle_outlined : Icons.contactless),
+              label: Text(receivingByNfc ? 'Stop receiving by tap' : 'Receive by tap'),
+            ),
+            if (nfcStatus != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(nfcStatus!),
+              ),
+            if (!nfcAvailable || !nfcHostCardEmulationAvailable)
+              const Padding(
+                padding: EdgeInsets.only(top: 4),
+                child: Text('Two NFC-capable Android phones are required; one must support card emulation.'),
+              ),
             const SizedBox(height: 16),
             if (token.isNotEmpty) ...[
               Center(

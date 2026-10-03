@@ -79,6 +79,8 @@ Base: `http://localhost:3000`
 | GET | `/students/me` | student | profile, frozen, **computed** balance |
 | GET | `/students/directory?q=...` | student | search active students by name or campus ID |
 | POST | `/students/transfer` | student | test-only atomic peer transfer `{ collegeId, amountPaise, pin, note? }` |
+| POST | `/students/nfc/session` | student | create a two-minute, one-use recipient token for Android HCE |
+| POST | `/students/nfc/transfer` | student | PIN-free test transfer `{ recipientToken, amountPaise, note? }`, capped at ₹500 per tap and ₹2,000 per UTC day |
 | POST | `/students/test-topup` | student | credit ₹100 test (or body `amountPaise`) |
 | GET | `/students/qr` | student | rotating pay token |
 | POST | `/students/freeze` | student | `{ frozen, pin }` |
@@ -102,8 +104,9 @@ Auth: `Authorization: Bearer <jwt>`. Admin: `x-admin-key`.
 3. Merchant `CANTEEN1` / `1234` charges using QR text; student balance drops; both ledgers show the same payment.
 4. Freeze blocks a subsequent charge.
 5. A student can search the active student directory and send a PIN-confirmed, balance-checked test transfer; both student ledgers update atomically.
-6. Admin dashboard loads with the admin key.
-7. No Razorpay, no production DB, no real PII.
+6. Android students can exchange a one-use HCE session token and transfer test funds without a PIN; server-side per-tap and daily caps apply.
+7. Admin dashboard loads with the admin key.
+8. No Razorpay, no production DB, no real PII.
 
 ## Preserve
 
