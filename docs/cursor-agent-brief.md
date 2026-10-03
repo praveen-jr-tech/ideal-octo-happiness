@@ -77,6 +77,8 @@ Base: `http://localhost:3000`
 | POST | `/students/signup` | public | create student + empty ledger |
 | POST | `/students/login` | public | JWT |
 | GET | `/students/me` | student | profile, frozen, **computed** balance |
+| GET | `/students/directory?q=...` | student | search active students by name or campus ID |
+| POST | `/students/transfer` | student | test-only atomic peer transfer `{ collegeId, amountPaise, pin, note? }` |
 | POST | `/students/test-topup` | student | credit ₹100 test (or body `amountPaise`) |
 | GET | `/students/qr` | student | rotating pay token |
 | POST | `/students/freeze` | student | `{ frozen, pin }` |
@@ -99,8 +101,9 @@ Auth: `Authorization: Bearer <jwt>`. Admin: `x-admin-key`.
 2. Student signs up (or uses `STU1001` / `1234`), adds ₹100, sees QR.
 3. Merchant `CANTEEN1` / `1234` charges using QR text; student balance drops; both ledgers show the same payment.
 4. Freeze blocks a subsequent charge.
-5. Admin dashboard loads with the admin key.
-6. No Razorpay, no production DB, no real PII.
+5. A student can search the active student directory and send a PIN-confirmed, balance-checked test transfer; both student ledgers update atomically.
+6. Admin dashboard loads with the admin key.
+7. No Razorpay, no production DB, no real PII.
 
 ## Preserve
 

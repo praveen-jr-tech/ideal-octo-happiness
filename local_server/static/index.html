@@ -7,14 +7,18 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/static/app.css?v=20261002-5" />
+    <link rel="stylesheet" href="/static/app.css?v=20261003-7" />
   </head>
   <body>
     <div class="shell">
       <header class="top">
         <div>
           <h1>Campus Wallet</h1>
+          <p class="brand-caption">Your campus, in one tap</p>
         </div>
+        <button id="profile-open" class="profile-button" type="button" aria-label="Open profile" hidden>
+          <span class="header-profile-avatar" id="header-profile-avatar" aria-hidden="true">A</span>
+        </button>
       </header>
 
       <p id="flash" class="flash" hidden></p>
@@ -30,7 +34,7 @@
       <section id="view-student-auth" class="panel" hidden>
         <button class="back" data-go="home">← Home</button>
         <h2>Student</h2>
-        <label>College ID <input id="s-id" value="STU1001" /></label>
+        <label>College ID <input id="s-id" /></label>
         <label>Name (signup) <input id="s-name" value="Alex" /></label>
         <label>PIN <input id="s-pin" type="password" value="1234" /></label>
         <div class="row">
@@ -40,24 +44,89 @@
       </section>
 
       <section id="view-student" class="panel" hidden>
-        <div class="row spread">
-          <button class="back" id="s-out">Log out</button>
-          <img id="s-profile-photo" class="profile-photo" alt="Student profile photo" hidden />
-          <span id="s-who" class="muted"></span>
+        <div id="student-home-content">
+          <div class="student-search">
+            <span aria-hidden="true">⌕</span>
+            <input id="friend-search" type="search" placeholder="Search by name or campus ID" aria-label="Search students by name or campus ID" />
+          </div>
+          <div class="campus-hero">
+            <div class="hero-copy">
+              <p class="hero-eyebrow">CAMPUS WALLET</p>
+              <h2>Hey, <span id="s-greeting-name">student</span></h2>
+              <p>Your campus money, all in one place.</p>
+            </div>
+            <div class="campus-art" aria-hidden="true">
+              <span class="art-sun"></span>
+              <span class="art-cloud art-cloud-one"></span>
+              <span class="art-cloud art-cloud-two"></span>
+              <span class="art-hill art-hill-back"></span>
+              <span class="art-hill art-hill-front"></span>
+              <span class="art-building"><i></i><i></i><i></i></span>
+            </div>
+          </div>
+
+          <div class="balance-card" id="student-wallet">
+            <div>
+              <p class="balance-label">Wallet balance</p>
+              <p class="balance" id="s-bal">₹0.00</p>
+              <p id="s-status" class="wallet-status muted"></p>
+            </div>
+            <img id="s-profile-photo" class="profile-photo" alt="Student profile photo" hidden />
+            <span id="s-who" class="wallet-owner muted"></span>
+          </div>
+
+          <div class="quick-actions home-actions">
+            <button class="quick-action" id="s-qr-shortcut" type="button"><span class="quick-icon">▦</span><span>My QR</span></button>
+            <button class="quick-action" id="s-topup" type="button"><span class="quick-icon">＋</span><span>Add money</span></button>
+            <button class="quick-action" id="s-freeze" type="button"><span class="quick-icon">Ⅱ</span><span id="s-freeze-label">Freeze</span></button>
+            <button class="quick-action" id="s-history-shortcut" type="button"><span class="quick-icon">↻</span><span>Activity</span></button>
+          </div>
+
+          <section class="friends-section">
+            <div class="friends-heading">
+              <div>
+                <h3>People</h3>
+                <p class="section-copy">Choose a campus friend to send money.</p>
+              </div>
+              <span id="friends-count" class="friends-count"></span>
+            </div>
+            <div id="friends-list" class="friends-list" aria-live="polite"></div>
+            <p id="friends-empty" class="empty-search" hidden>No students found.</p>
+          </section>
         </div>
-        <p class="balance" id="s-bal">₹0.00</p>
-        <p id="s-status" class="muted"></p>
-        <div class="row">
-          <button id="s-topup">Add ₹100</button>
-          <button class="ghost" id="s-freeze">Freeze</button>
-        </div>
-        <div class="qr-box">
-          <img id="s-qr-img" alt="Pay QR" hidden />
-          <p id="s-qr-text" class="token"></p>
-          <button class="ghost" id="s-copy">Copy QR text</button>
-        </div>
-        <h3>History</h3>
-        <ul id="s-ledger" class="ledger"></ul>
+
+        <section id="student-money-content" class="money-content" hidden>
+          <div class="money-heading">
+            <button id="money-back" class="back" type="button">← Home</button>
+            <h2>Transactions</h2>
+            <p>See payments sent, received, and added to your wallet.</p>
+          </div>
+          <div class="balance-card money-balance">
+            <p class="balance-label">Wallet balance</p>
+            <p class="balance" id="money-bal">₹0.00</p>
+          </div>
+          <div class="transaction-summary" id="transaction-summary"></div>
+          <div class="transaction-filters" role="group" aria-label="Filter transactions">
+            <button type="button" class="active" data-ledger-filter="all">All</button>
+            <button type="button" data-ledger-filter="sent">Sent</button>
+            <button type="button" data-ledger-filter="received">Received</button>
+            <button type="button" data-ledger-filter="wallet">Wallet</button>
+          </div>
+          <section id="student-activity" class="history-box">
+            <div class="activity-heading">
+              <div><h3 id="transaction-filter-title">All transactions</h3><p class="section-copy">Your wallet transaction history</p></div>
+              <button class="activity-refresh" id="s-refresh" type="button" aria-label="Refresh activity">↻</button>
+            </div>
+            <ul id="s-ledger" class="ledger"></ul>
+            <p id="transactions-empty" class="empty-search" hidden>No transactions in this category yet.</p>
+          </section>
+        </section>
+
+        <nav class="student-bottom-nav" aria-label="Main navigation">
+          <button class="active" type="button" data-student-tab="home"><span>⌂</span>Home</button>
+          <button type="button" data-student-tab="money"><span>₹</span>Transactions</button>
+          <button type="button" data-student-tab="you"><span class="you-avatar">A</span>You</button>
+        </nav>
       </section>
 
       <section id="view-merchant-auth" class="panel" hidden>
@@ -73,21 +142,30 @@
           <button class="back" id="m-out">Log out</button>
           <span id="m-who" class="muted"></span>
         </div>
-        <p class="balance" id="m-bal">₹0.00</p>
-        <div class="scan-tools">
-          <div class="row">
-            <button class="ghost" id="m-scan-start" type="button">Scan QR</button>
-            <button class="ghost" id="m-scan-stop" type="button" hidden>Stop camera</button>
-          </div>
-          <input id="m-camera-file" type="file" accept="image/*" capture="environment" hidden />
-          <video id="m-camera" playsinline muted hidden></video>
-          <p id="m-scan-status" class="muted" aria-live="polite">Scan the student's QR, then confirm the amount before charging.</p>
+        <div class="balance-card merchant-balance">
+          <p class="balance-label">Sales balance</p>
+          <p class="balance" id="m-bal">₹0.00</p>
         </div>
-        <label>Student QR text <textarea id="m-token" rows="3"></textarea></label>
-        <label>Charge (₹) <input id="m-amt" value="40" /></label>
-        <button id="m-charge">Charge</button>
-        <h3>Sales</h3>
-        <ul id="m-ledger" class="ledger"></ul>
+        <div class="merchant-grid">
+          <section class="scan-tools merchant-card">
+            <h3>Collect a payment</h3>
+            <p class="section-copy">Scan a student's QR or enter their code to charge.</p>
+            <div class="row">
+              <button class="ghost" id="m-scan-start" type="button">Scan QR</button>
+              <button class="ghost" id="m-scan-stop" type="button" hidden>Stop camera</button>
+            </div>
+            <input id="m-camera-file" type="file" accept="image/*" capture="environment" hidden />
+            <video id="m-camera" playsinline muted hidden></video>
+            <p id="m-scan-status" class="muted" aria-live="polite">Scan the student's QR, then confirm the amount before charging.</p>
+            <label>Student QR text <textarea id="m-token" rows="3"></textarea></label>
+            <label>Charge (₹) <input id="m-amt" value="40" /></label>
+            <button id="m-charge">Charge</button>
+          </section>
+          <section id="merchant-activity" class="history-box">
+            <h3>Recent sales</h3>
+            <ul id="m-ledger" class="ledger"></ul>
+          </section>
+        </div>
       </section>
 
       <section id="view-admin" class="panel" hidden>
@@ -115,8 +193,117 @@
         <div id="a-tables"></div>
       </section>
     </div>
+    <dialog id="profile-dialog" class="app-dialog" aria-labelledby="profile-title">
+      <div class="dialog-header">
+        <div>
+          <p class="dialog-kicker">YOUR ACCOUNT</p>
+          <h2 id="profile-title">Profile</h2>
+        </div>
+        <button id="profile-close" class="icon-button" type="button" aria-label="Close profile">×</button>
+      </div>
+      <div class="settings-content">
+        <section class="settings-profile">
+          <span id="settings-avatar-fallback" class="settings-avatar" aria-hidden="true"></span>
+          <img id="settings-avatar" class="settings-avatar" alt="Profile photo" hidden />
+          <div>
+            <h3 id="settings-name"></h3>
+            <p id="settings-role" class="muted"></p>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h3>Profile information</h3>
+          <dl class="settings-list">
+            <div><dt>Campus ID</dt><dd id="settings-id"></dd></div>
+            <div><dt>Account type</dt><dd id="settings-account-type"></dd></div>
+          </dl>
+        </section>
+
+        <section class="settings-section">
+          <h3>Wallet</h3>
+          <dl class="settings-list">
+            <div><dt>Status</dt><dd id="settings-wallet-status"></dd></div>
+            <div><dt>Available balance</dt><dd id="settings-balance"></dd></div>
+          </dl>
+        </section>
+
+        <section class="settings-section">
+          <h3>Security</h3>
+          <p class="settings-copy">Your password or PIN is never displayed. Confirm it whenever you freeze or unfreeze your wallet.</p>
+        </section>
+
+        <section class="settings-section">
+          <h3>Activity</h3>
+          <button id="profile-history" class="settings-link" type="button">View recent activity <span aria-hidden="true">›</span></button>
+        </section>
+
+        <section class="settings-section">
+          <h3>Help &amp; app information</h3>
+          <details class="help-details">
+            <summary>How do I get help?</summary>
+            <p>For account or campus access help, contact your campus wallet administrator.</p>
+          </details>
+          <p class="settings-copy app-info">Campus Wallet · Demo balances only. No real money or bank accounts are connected.</p>
+          <button id="s-out" class="settings-link settings-signout" type="button">Sign out <span aria-hidden="true">↗</span></button>
+        </section>
+      </div>
+    </dialog>
+
+    <dialog id="my-qr-dialog" class="app-dialog qr-dialog" aria-labelledby="my-qr-title">
+      <div class="dialog-header">
+        <div><p class="dialog-kicker">CAMPUS WALLET</p><h2 id="my-qr-title">My QR</h2></div>
+        <button id="my-qr-close" class="icon-button" type="button" aria-label="Close QR">×</button>
+      </div>
+      <div class="qr-dialog-content">
+        <p>Let the campus canteen scan this code to collect a payment.</p>
+        <img id="s-qr-img" alt="Your payment QR code" hidden />
+        <p id="s-qr-text" class="token"></p>
+        <button class="ghost" id="s-copy" type="button">Copy QR text</button>
+      </div>
+    </dialog>
+
+    <dialog id="friend-payment-dialog" class="app-dialog freeze-dialog friend-payment-dialog" aria-labelledby="friend-payment-title">
+      <form id="friend-payment-form">
+        <div class="dialog-header">
+          <div><p class="dialog-kicker">CAMPUS WALLET PAYMENT</p><h2 id="friend-payment-title">Send money</h2></div>
+          <button id="friend-payment-close" class="icon-button" type="button" aria-label="Cancel payment">×</button>
+        </div>
+        <div id="payment-recipient" class="payment-recipient"></div>
+        <label for="payment-amount">Amount (₹)</label>
+        <input id="payment-amount" type="number" min="0.01" step="0.01" inputmode="decimal" required />
+        <label for="payment-note">Note (optional)</label>
+        <input id="payment-note" type="text" maxlength="100" placeholder="What's it for?" />
+        <label for="payment-pin">Confirm with password / PIN</label>
+        <input id="payment-pin" type="password" autocomplete="current-password" required />
+        <p id="payment-error" class="dialog-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button id="friend-payment-cancel" class="ghost" type="button">Cancel</button>
+          <button id="friend-payment-submit" type="submit">Send payment</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="freeze-dialog" class="app-dialog freeze-dialog" aria-labelledby="freeze-title">
+      <form id="freeze-form">
+        <div class="dialog-header">
+          <div>
+            <p class="dialog-kicker">SECURITY CHECK</p>
+            <h2 id="freeze-title">Freeze wallet?</h2>
+          </div>
+          <button id="freeze-close" class="icon-button" type="button" aria-label="Cancel">×</button>
+        </div>
+        <p id="freeze-description" class="settings-copy">Enter your password or PIN to confirm this change.</p>
+        <label for="freeze-password">Password / PIN</label>
+        <input id="freeze-password" type="password" autocomplete="current-password" required />
+        <p id="freeze-error" class="dialog-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button id="freeze-cancel" class="ghost" type="button">Cancel</button>
+          <button id="freeze-confirm" type="submit">Freeze wallet</button>
+        </div>
+      </form>
+    </dialog>
     <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-    <script src="/static/app.js?v=20261002-5"></script>
+    <script src="/static/app.js?v=20261003-7"></script>
   </body>
 </html>

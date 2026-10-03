@@ -10,6 +10,10 @@ const merchantScanner = {
   stream: null,
 };
 
+let selectedFriend = null;
+let friendSearchTimer = 0;
+let studentLedgerEntries = [];
+
 const viewNames = [
   'view-home',
   'view-student-auth',
@@ -45,6 +49,7 @@ function setView(name) {
     const node = document.getElementById(id);
     if (node) node.hidden = id !== name;
   }
+  document.getElementById('profile-open').hidden = !['view-student', 'view-merchant'].includes(name);
 }
 
 function requireRole(role) {
@@ -90,11 +95,21 @@ function fmtRupees(paise) {
 function ledgerTypeLabel(entryType) {
   if (entryType === 'test_topup') return 'Top-up';
   if (entryType === 'qr_sale') return 'QR sale';
+  if (entryType === 'student_transfer_out') return 'Sent to friend';
+  if (entryType === 'student_transfer_in') return 'Received from friend';
   return entryType;
 }
 
 function ledgerNote(entry) {
   return entry.entry_type === 'test_topup' ? '' : (entry.note || '');
+}
+
+function transactionDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
 }
 
 function clearToken() {
@@ -117,22 +132,108 @@ async function loadStudentProfile() {
   const photo = document.getElementById('s-profile-photo');
   photo.src = profile.photoData || '';
   photo.hidden = !profile.photoData;
+  document.getElementById('s-greeting-name').textContent = profile.name.split(' ')[0];
   document.getElementById('s-bal').textContent = fmtRupees(profile.balancePaise);
-  document.getElementById('s-status').textContent = profile.frozen ? 'Frozen' : 'Active';
+  document.getElementById('s-status').textContent = profile.frozen ? 'Wallet frozen' : 'Ready to pay';
+  document.getElementById('s-freeze-label').textContent = profile.frozen ? 'Unfreeze wallet' : 'Freeze wallet';
+  document.getElementById('money-bal').textContent = fmtRupees(profile.balancePaise);
+  const headerAvatar = document.getElementById('header-profile-avatar');
+  headerAvatar.textContent = (profile.name || profile.collegeId).trim().charAt(0).toUpperCase();
+  headerAvatar.style.backgroundImage = profile.photoData ? `url("${profile.photoData}")` : '';
+  headerAvatar.classList.toggle('has-photo', Boolean(profile.photoData));
+  updateSettings(profile, 'student');
   setView('view-student');
-  await loadStudentLedger();
-  await loadStudentQr();
+  await Promise.all([loadStudentLedger(), loadStudentFriends()]);
 }
 
 async function loadStudentLedger() {
   const data = await api('/students/ledger');
+  studentLedgerEntries = data.entries || [];
+  renderStudentTransactions();
+}
+
+function renderStudentTransactions() {
   const list = document.getElementById('s-ledger');
-  list.innerHTML = '';
-  for (const row of data.entries || []) {
-    const li = document.createElement('li');
-    li.textContent = [ledgerTypeLabel(row.entry_type), fmtRupees(row.amount_paise), ledgerNote(row)].filter(Boolean).join(' · ');
-    list.appendChild(li);
+  const filter = document.querySelector('[data-ledger-filter].active')?.dataset.ledgerFilter || 'all';
+  const filtered = studentLedgerEntries.filter((entry) => {
+    if (filter === 'sent') return entry.entry_type === 'student_transfer_out';
+    if (filter === 'received') return entry.entry_type === 'student_transfer_in';
+    if (filter === 'wallet') return !['student_transfer_out', 'student_transfer_in'].includes(entry.entry_type);
+    return true;
+  });
+  list.replaceChildren();
+  for (const entry of filtered) {
+    const row = document.createElement('li');
+    row.className = 'transaction-row';
+    const icon = document.createElement('span');
+    icon.className = `transaction-icon ${entry.amount_paise < 0 ? 'debit' : 'credit'}`;
+    icon.textContent = entry.amount_paise < 0 ? '↗' : '↙';
+    const details = document.createElement('span');
+    details.className = 'transaction-details';
+    const title = document.createElement('strong');
+    title.textContent = ledgerTypeLabel(entry.entry_type);
+    const note = document.createElement('span');
+    note.textContent = ledgerNote(entry) || 'Wallet transaction';
+    const date = document.createElement('time');
+    date.textContent = transactionDate(entry.created_at);
+    details.append(title, note, date);
+    const amount = document.createElement('strong');
+    amount.className = `transaction-amount ${entry.amount_paise < 0 ? 'debit' : 'credit'}`;
+    const sign = entry.amount_paise < 0 ? '− ' : '+ ';
+    amount.textContent = `${sign}${fmtRupees(Math.abs(entry.amount_paise))}`;
+    row.append(icon, details, amount);
+    list.appendChild(row);
   }
+
+  const sentEntries = studentLedgerEntries.filter((entry) => entry.entry_type === 'student_transfer_out');
+  const sentTotal = sentEntries.reduce((sum, entry) => sum + Math.abs(entry.amount_paise), 0);
+  document.getElementById('transaction-summary').replaceChildren();
+  const summaryLabel = document.createElement('span');
+  summaryLabel.textContent = `${sentEntries.length} friend payment${sentEntries.length === 1 ? '' : 's'} sent`;
+  const summaryTotal = document.createElement('strong');
+  summaryTotal.textContent = fmtRupees(sentTotal);
+  document.getElementById('transaction-summary').append(summaryLabel, summaryTotal);
+  document.getElementById('transactions-empty').hidden = filtered.length > 0;
+  const titles = { all: 'All transactions', sent: 'Payments sent', received: 'Payments received', wallet: 'Wallet activity' };
+  document.getElementById('transaction-filter-title').textContent = titles[filter];
+}
+
+async function loadStudentFriends(query = '') {
+  const data = await api(`/students/directory?q=${encodeURIComponent(query)}`);
+  const list = document.getElementById('friends-list');
+  list.replaceChildren();
+  for (const student of data.students || []) {
+    const button = document.createElement('button');
+    button.className = 'friend-profile';
+    button.type = 'button';
+    button.setAttribute('aria-label', `Pay ${student.name}`);
+
+    if (student.photoData) {
+      const photo = document.createElement('img');
+      photo.className = 'friend-avatar';
+      photo.src = student.photoData;
+      photo.alt = '';
+      button.appendChild(photo);
+    } else {
+      const avatar = document.createElement('span');
+      avatar.className = 'friend-avatar friend-avatar-fallback';
+      avatar.textContent = student.name.trim().charAt(0).toUpperCase();
+      button.appendChild(avatar);
+    }
+
+    const name = document.createElement('span');
+    name.className = 'friend-name';
+    name.textContent = student.name;
+    button.appendChild(name);
+    const collegeId = document.createElement('span');
+    collegeId.className = 'friend-id';
+    collegeId.textContent = student.collegeId;
+    button.appendChild(collegeId);
+    button.addEventListener('click', () => openFriendPayment(student));
+    list.appendChild(button);
+  }
+  document.getElementById('friends-count').textContent = data.students.length ? `${data.students.length} shown` : '';
+  document.getElementById('friends-empty').hidden = data.students.length > 0;
 }
 
 async function loadStudentQr() {
@@ -145,14 +246,106 @@ async function loadStudentQr() {
   qrEl.hidden = false;
 }
 
+async function openStudentQr() {
+  if (state.account && state.account.frozen) {
+    setFlash('Unfreeze your wallet to show your payment QR.');
+    return;
+  }
+  try {
+    document.getElementById('my-qr-dialog').showModal();
+    await loadStudentQr();
+  } catch (e) {
+    document.getElementById('my-qr-dialog').close();
+    setFlash(e.message);
+  }
+}
+
+function openFriendPayment(student) {
+  selectedFriend = student;
+  const recipient = document.getElementById('payment-recipient');
+  recipient.replaceChildren();
+  if (student.photoData) {
+    const photo = document.createElement('img');
+    photo.className = 'friend-avatar';
+    photo.src = student.photoData;
+    photo.alt = '';
+    recipient.appendChild(photo);
+  } else {
+    const avatar = document.createElement('span');
+    avatar.className = 'friend-avatar friend-avatar-fallback';
+    avatar.textContent = student.name.trim().charAt(0).toUpperCase();
+    recipient.appendChild(avatar);
+  }
+  const details = document.createElement('div');
+  const name = document.createElement('strong');
+  name.textContent = student.name;
+  const id = document.createElement('span');
+  id.textContent = student.collegeId;
+  details.append(name, id);
+  recipient.appendChild(details);
+  document.getElementById('payment-amount').value = '';
+  document.getElementById('payment-note').value = '';
+  document.getElementById('payment-pin').value = '';
+  document.getElementById('payment-error').hidden = true;
+  document.getElementById('friend-payment-dialog').showModal();
+  document.getElementById('payment-amount').focus();
+}
+
+async function sendFriendPayment() {
+  if (!selectedFriend) throw new Error('Choose a student first');
+  const amount = Number(document.getElementById('payment-amount').value);
+  const amountPaise = Math.round(amount * 100);
+  if (!Number.isFinite(amount) || amountPaise <= 0 || Math.abs(amount * 100 - amountPaise) > 1e-6) {
+    throw new Error('Enter a valid amount in rupees');
+  }
+  const result = await api('/students/transfer', {
+    method: 'POST',
+    body: {
+      collegeId: selectedFriend.collegeId,
+      amountPaise,
+      note: document.getElementById('payment-note').value.trim(),
+      pin: document.getElementById('payment-pin').value,
+    },
+  });
+  document.getElementById('friend-payment-dialog').close();
+  selectedFriend = null;
+  setFlash(`Sent ${fmtRupees(result.amountPaise)} to ${result.recipient.name}.`, 'ok');
+  try {
+    await loadStudentProfile();
+  } catch (e) {
+    setFlash(`Payment sent, but wallet refresh failed: ${e.message}`);
+  }
+}
+
 async function loadMerchantProfile() {
   const profile = await api('/merchants/me');
   state.account = profile;
   state.role = 'merchant';
   document.getElementById('m-who').textContent = `${profile.collegeId} · ${profile.name}`;
   document.getElementById('m-bal').textContent = fmtRupees(profile.balancePaise);
+  const headerAvatar = document.getElementById('header-profile-avatar');
+  headerAvatar.textContent = (profile.name || profile.collegeId).trim().charAt(0).toUpperCase();
+  headerAvatar.style.backgroundImage = profile.photoData ? `url("${profile.photoData}")` : '';
+  headerAvatar.classList.toggle('has-photo', Boolean(profile.photoData));
+  updateSettings(profile, 'merchant');
   setView('view-merchant');
   await loadMerchantLedger();
+}
+
+function updateSettings(profile, role) {
+  const photo = document.getElementById('settings-avatar');
+  photo.src = profile.photoData || '';
+  photo.hidden = !profile.photoData;
+  const fallback = document.getElementById('settings-avatar-fallback');
+  fallback.textContent = (profile.name || profile.collegeId || 'C').trim().charAt(0).toUpperCase();
+  fallback.hidden = Boolean(profile.photoData);
+  document.getElementById('settings-name').textContent = profile.name || profile.collegeId;
+  document.getElementById('settings-role').textContent = `${profile.collegeId} · ${role === 'student' ? 'Student' : 'Canteen'}`;
+  document.getElementById('settings-id').textContent = profile.collegeId;
+  document.getElementById('settings-account-type').textContent = role === 'student' ? 'Student' : 'Canteen';
+  document.getElementById('settings-wallet-status').textContent = profile.frozen ? 'Frozen' : 'Active';
+  document.getElementById('settings-wallet-status').classList.toggle('status-frozen', Boolean(profile.frozen));
+  document.getElementById('settings-balance').textContent = fmtRupees(profile.balancePaise);
 }
 
 async function loadMerchantLedger() {
@@ -272,12 +465,26 @@ async function topupStudent() {
   setFlash('₹100 added.', 'ok');
 }
 
-async function freezeStudent() {
-  const pin = prompt('Enter your PIN to continue');
-  if (pin === null) return;
-  await api('/students/freeze', { method: 'POST', body: { frozen: !(state.account && state.account.frozen), pin } });
+function openFreezeDialog() {
+  const frozen = Boolean(state.account && state.account.frozen);
+  document.getElementById('freeze-title').textContent = frozen ? 'Unfreeze wallet?' : 'Freeze wallet?';
+  document.getElementById('freeze-description').textContent = frozen
+    ? 'Enter your password or PIN to restore wallet payments.'
+    : 'Enter your password or PIN to pause wallet payments.';
+  document.getElementById('freeze-confirm').textContent = frozen ? 'Unfreeze wallet' : 'Freeze wallet';
+  document.getElementById('freeze-password').value = '';
+  document.getElementById('freeze-error').hidden = true;
+  document.getElementById('freeze-dialog').showModal();
+  document.getElementById('freeze-password').focus();
+}
+
+async function freezeStudent(pin) {
+  const frozen = !(state.account && state.account.frozen);
+  const result = await api('/students/freeze', { method: 'POST', body: { frozen, pin } });
+  state.account = result;
+  document.getElementById('freeze-dialog').close();
   await loadStudentProfile();
-  setFlash('Account update applied.', 'ok');
+  setFlash(frozen ? 'Wallet frozen.' : 'Wallet unfrozen.', 'ok');
 }
 
 async function chargeMerchant() {
@@ -567,14 +774,157 @@ document.getElementById('s-topup').addEventListener('click', async () => {
 });
 
 document.getElementById('s-freeze').addEventListener('click', async () => {
+  openFreezeDialog();
+});
+
+document.getElementById('s-qr-shortcut').addEventListener('click', () => {
+  openStudentQr();
+});
+
+document.getElementById('s-history-shortcut').addEventListener('click', () => {
+  setStudentTab('money');
+});
+
+document.getElementById('friend-search').addEventListener('input', (event) => {
+  window.clearTimeout(friendSearchTimer);
+  friendSearchTimer = window.setTimeout(() => {
+    loadStudentFriends(event.target.value.trim()).catch((e) => setFlash(e.message));
+  }, 180);
+});
+
+document.getElementById('s-refresh').addEventListener('click', async () => {
   try {
-    await freezeStudent();
+    await loadStudentProfile();
+    setFlash('Wallet updated.', 'ok');
   } catch (e) {
     setFlash(e.message);
   }
 });
 
+document.querySelector('.transaction-filters').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-ledger-filter]');
+  if (!button) return;
+  document.querySelectorAll('[data-ledger-filter]').forEach((filterButton) => {
+    filterButton.classList.toggle('active', filterButton === button);
+  });
+  renderStudentTransactions();
+});
+
+document.querySelector('.student-bottom-nav').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-student-tab]');
+  if (!button) return;
+  document.querySelectorAll('[data-student-tab]').forEach((tab) => {
+    tab.classList.toggle('active', tab === button);
+  });
+  const tab = button.dataset.studentTab;
+  if (tab === 'you') {
+    document.getElementById('profile-dialog').showModal();
+  } else if (tab === 'money') {
+    setStudentTab('money');
+  } else {
+    setStudentTab('home');
+  }
+});
+
+function setStudentTab(tabName) {
+  const showingMoney = tabName === 'money';
+  document.getElementById('student-home-content').hidden = showingMoney;
+  document.getElementById('student-money-content').hidden = !showingMoney;
+  document.querySelectorAll('[data-student-tab]').forEach((tab) => {
+    tab.classList.toggle('active', tab.dataset.studentTab === tabName);
+  });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+document.getElementById('money-back').addEventListener('click', () => setStudentTab('home'));
+
+document.getElementById('profile-open').addEventListener('click', () => {
+  document.getElementById('profile-dialog').showModal();
+});
+
+document.getElementById('profile-close').addEventListener('click', () => {
+  document.getElementById('profile-dialog').close();
+});
+
+document.getElementById('profile-history').addEventListener('click', () => {
+  document.getElementById('profile-dialog').close();
+  if (state.role === 'student') {
+    setStudentTab('money');
+  } else {
+    document.getElementById('merchant-activity').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+});
+
+document.getElementById('my-qr-close').addEventListener('click', () => {
+  document.getElementById('my-qr-dialog').close();
+});
+
+document.getElementById('friend-payment-close').addEventListener('click', () => {
+  document.getElementById('friend-payment-dialog').close();
+});
+
+document.getElementById('friend-payment-cancel').addEventListener('click', () => {
+  document.getElementById('friend-payment-dialog').close();
+});
+
+document.getElementById('friend-payment-dialog').addEventListener('close', () => {
+  document.getElementById('payment-pin').value = '';
+  document.getElementById('payment-error').hidden = true;
+  selectedFriend = null;
+});
+
+document.getElementById('friend-payment-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const submit = document.getElementById('friend-payment-submit');
+  const error = document.getElementById('payment-error');
+  submit.disabled = true;
+  error.hidden = true;
+  try {
+    await sendFriendPayment();
+  } catch (e) {
+    document.getElementById('payment-pin').value = '';
+    error.textContent = e.message;
+    error.hidden = false;
+  } finally {
+    submit.disabled = false;
+  }
+});
+
+document.getElementById('freeze-close').addEventListener('click', () => {
+  document.getElementById('freeze-dialog').close();
+});
+
+document.getElementById('freeze-cancel').addEventListener('click', () => {
+  document.getElementById('freeze-dialog').close();
+});
+
+document.getElementById('freeze-dialog').addEventListener('close', () => {
+  document.getElementById('freeze-password').value = '';
+  document.getElementById('freeze-error').hidden = true;
+});
+
+document.getElementById('freeze-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const password = document.getElementById('freeze-password');
+  const error = document.getElementById('freeze-error');
+  const confirm = document.getElementById('freeze-confirm');
+  confirm.disabled = true;
+  error.hidden = true;
+  try {
+    await freezeStudent(password.value);
+    password.value = '';
+  } catch (e) {
+    password.value = '';
+    error.textContent = e.message;
+    error.hidden = false;
+    password.focus();
+  } finally {
+    confirm.disabled = false;
+  }
+});
+
 document.getElementById('s-out').addEventListener('click', () => {
+  document.getElementById('profile-dialog').close();
   clearToken();
   setView('view-home');
   setFlash('Logged out.', 'ok');

@@ -107,6 +107,109 @@ function mountStudentRoutes(app, { pool, config }) {
     })
   );
 
+  app.get(
+    "/students/directory",
+    studentAuth,
+    asyncHandler(async (req, res) => {
+      const query = String(req.query.q || "").trim().slice(0, 80).toLowerCase();
+      const { rows } = await pool.query(
+        `SELECT college_id, name, photo_data
+         FROM accounts
+         WHERE role = 'student' AND frozen = FALSE AND id <> $1
+           AND ($2 = '' OR POSITION($2 IN LOWER(name)) > 0
+                OR POSITION($2 IN LOWER(college_id)) > 0)
+         ORDER BY name, college_id
+         LIMIT 30`,
+        [req.auth.sub, query]
+      );
+      res.json({
+        students: rows.map((row) => ({
+          collegeId: row.college_id,
+          name: row.name,
+          photoData: row.photo_data || null,
+        })),
+      });
+    })
+  );
+
+  app.post(
+    "/students/transfer",
+    studentAuth,
+    asyncHandler(async (req, res) => {
+      if (!config.testMode) {
+        throw new HttpError(403, "Student transfers are available only in local test mode");
+      }
+      const { collegeId, pin, amountPaise } = req.body || {};
+      const recipientCollegeId = assertCollegeId(collegeId);
+      assertPinFormat(pin);
+      if (!Number.isSafeInteger(amountPaise) || amountPaise <= 0) {
+        throw new HttpError(400, "amountPaise must be a positive integer");
+      }
+      const note = String((req.body && req.body.note) || "").trim();
+      if (note.length > 100) throw new HttpError(400, "note must be 100 characters or fewer");
+
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const { rows } = await client.query(
+          `SELECT * FROM accounts
+           WHERE (id = $1 AND role = 'student')
+              OR (college_id = $2 AND role = 'student')
+           ORDER BY id
+           FOR UPDATE`,
+          [req.auth.sub, recipientCollegeId]
+        );
+        const sender = rows.find((row) => row.id === req.auth.sub);
+        if (!sender || !verifyPin(pin, sender.pin_hash)) throw new HttpError(401, "Wrong PIN");
+        if (sender.frozen) throw new HttpError(403, "Your wallet is frozen");
+
+        const recipient = rows.find((row) => row.college_id === recipientCollegeId);
+        if (!recipient) throw new HttpError(404, "Student not found");
+        if (recipient.id === sender.id) throw new HttpError(400, "You cannot send money to yourself");
+        if (recipient.frozen) throw new HttpError(403, "That student's wallet is frozen");
+
+        const balancePaise = await getBalancePaise(client, sender.id);
+        if (balancePaise < amountPaise) throw new HttpError(400, "Insufficient test balance");
+
+        const transferNote = note || `To ${recipient.name}`;
+        await insertEntry(client, {
+          id: crypto.randomUUID(),
+          accountId: sender.id,
+          amountPaise: -amountPaise,
+          entryType: "student_transfer_out",
+          relatedAccountId: recipient.id,
+          note: `To ${recipient.name}${note ? ` · ${note}` : ""}`,
+        });
+        await insertEntry(client, {
+          id: crypto.randomUUID(),
+          accountId: recipient.id,
+          amountPaise,
+          entryType: "student_transfer_in",
+          relatedAccountId: sender.id,
+          note: `From ${sender.name}${note ? ` · ${note}` : ""}`,
+        });
+
+        const updatedBalancePaise = balancePaise - amountPaise;
+        await client.query("COMMIT");
+        res.json({
+          ok: true,
+          amountPaise,
+          recipient: {
+            collegeId: recipient.college_id,
+            name: recipient.name,
+          },
+          balancePaise: updatedBalancePaise,
+          note: transferNote,
+        });
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+    })
+  );
+
   app.post(
     "/students/test-topup",
     studentAuth,

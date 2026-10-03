@@ -513,6 +513,115 @@ def student_me():
     return jsonify(public_account(row, balance_paise(db, row["id"])))
 
 
+@app.get("/students/directory")
+@student_auth
+def student_directory():
+    query = request.args.get("q", "").strip()[:80]
+    db = get_db()
+    rows = db.execute(
+        """SELECT id, college_id, name, photo_data
+           FROM accounts
+           WHERE role = 'student' AND frozen = 0 AND id != ?
+             AND (? = '' OR instr(lower(name), lower(?)) > 0
+                  OR instr(lower(college_id), lower(?)) > 0)
+           ORDER BY name COLLATE NOCASE, college_id
+           LIMIT 30""",
+        (g.auth["sub"], query, query, query),
+    ).fetchall()
+    return jsonify({
+        "students": [
+            {
+                "collegeId": row["college_id"],
+                "name": row["name"],
+                "photoData": row["photo_data"],
+            }
+            for row in rows
+        ]
+    })
+
+
+@app.post("/students/transfer")
+@student_auth
+def student_transfer():
+    if not TEST_MODE:
+        raise ApiError(403, "Student transfers are available only in local test mode")
+    body = json_body()
+    recipient_id = assert_college_id(body.get("collegeId", ""))
+    pin = assert_pin(body.get("pin", ""))
+    raw_amount = body.get("amountPaise")
+    try:
+        amount = int(raw_amount)
+    except (TypeError, ValueError) as exc:
+        raise ApiError(400, "amountPaise must be a positive integer") from exc
+    if isinstance(raw_amount, bool) or amount <= 0 or amount != raw_amount:
+        raise ApiError(400, "amountPaise must be a positive integer")
+    note = str(body.get("note") or "").strip()
+    if len(note) > 100:
+        raise ApiError(400, "note must be 100 characters or fewer")
+
+    db = get_db()
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        sender = db.execute(
+            "SELECT * FROM accounts WHERE id = ? AND role = 'student'",
+            (g.auth["sub"],),
+        ).fetchone()
+        if not sender or not verify_pin(pin, sender["pin_hash"]):
+            raise ApiError(401, "Wrong PIN")
+        if sender["frozen"]:
+            raise ApiError(403, "Your wallet is frozen")
+
+        recipient = db.execute(
+            "SELECT * FROM accounts WHERE college_id = ? AND role = 'student'",
+            (recipient_id,),
+        ).fetchone()
+        if not recipient:
+            raise ApiError(404, "Student not found")
+        if recipient["id"] == sender["id"]:
+            raise ApiError(400, "You cannot send money to yourself")
+        if recipient["frozen"]:
+            raise ApiError(403, "That student's wallet is frozen")
+
+        sender_balance = balance_paise(db, sender["id"])
+        if sender_balance < amount:
+            raise ApiError(400, "Insufficient test balance")
+
+        created_at = utcnow()
+        transfer_note = note or f"To {recipient['name']}"
+        db.executemany(
+            """INSERT INTO ledger_entries
+               (id, account_id, amount_paise, entry_type, related_account_id, note, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            [
+                (
+                    str(uuid.uuid4()), sender["id"], -amount, "student_transfer_out",
+                    recipient["id"], f"To {recipient['name']}" + (f" · {note}" if note else ""),
+                    created_at,
+                ),
+                (
+                    str(uuid.uuid4()), recipient["id"], amount, "student_transfer_in",
+                    sender["id"], f"From {sender['name']}" + (f" · {note}" if note else ""),
+                    created_at,
+                ),
+            ],
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return jsonify({
+        "ok": True,
+        "amountPaise": amount,
+        "recipient": {
+            "collegeId": recipient["college_id"],
+            "name": recipient["name"],
+        },
+        "balancePaise": balance_paise(db, sender["id"]),
+        "note": transfer_note,
+    })
+
+
 @app.post("/students/test-topup")
 @student_auth
 def student_topup():
