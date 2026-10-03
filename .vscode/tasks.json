@@ -1,0 +1,21 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Campus Wallet on port 3002",
+			"type": "shell",
+			"command": "C:/Users/pra17/AppData/Local/Python/pythoncore-3.14-64/python.exe",
+			"args": [
+				"local_server/app.py"
+			],
+			"options": {
+				"env": {
+					"HTTPS": "false",
+					"PORT": "3002"
+				}
+			},
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}
