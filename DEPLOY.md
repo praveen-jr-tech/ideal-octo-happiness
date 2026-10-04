@@ -12,11 +12,13 @@ The API applies `backend/schema.sql` when it starts. Do not put Render secrets i
 the app, source code, or chat. The app authenticates with student ID/PIN and a
 short-lived login token; it does not need a shared API key.
 
-## 2) Seed fictional test accounts
+## 2) Create fictional test accounts
 
-From the Render service shell, run `npm run seed` once. This creates fictional
-test accounts (`STU1001` / `1234`, `STU1002` / `1234`, and `CANTEEN1` / `1234`).
-Never use real student data or real payment credentials with this prototype.
+Use **Create a student account** in the Android app to register student test
+accounts. The optional `npm run seed` command creates fictional demo accounts
+(`STU1001` / `1234`, `STU1002` / `1234`, and `CANTEEN1` / `1234`) when run in an
+environment with the database connection configured. Never use real student
+data or real payment credentials with this prototype.
 
 ## 3) Build an Android test APK
 

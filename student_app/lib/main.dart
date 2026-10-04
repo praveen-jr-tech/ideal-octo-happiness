@@ -99,6 +99,17 @@ class _RoleScreenState extends State<RoleScreen> {
               if (error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(error!, style: const TextStyle(color: Colors.red))),
               const SizedBox(height: 20),
               FilledButton(onPressed: busy ? null : signIn, child: const Text('Continue')),
+              TextButton(
+                onPressed: busy
+                    ? null
+                    : () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute<void>(builder: (_) => const StudentAuthScreen()),
+                        );
+                      },
+                child: const Text('Create a student account'),
+              ),
             ],
           ),
         ),
