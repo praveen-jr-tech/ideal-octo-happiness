@@ -82,7 +82,7 @@ class _RoleScreenState extends State<RoleScreen> {
             padding: const EdgeInsets.all(20),
             shrinkWrap: true,
             children: [
-              Text('Welcome back', style: Theme.of(context).textTheme.headlineMedium),
+              Text('Campus payments, made simple', style: Theme.of(context).textTheme.headlineMedium),
               const SizedBox(height: 24),
               TextField(
                 controller: collegeId,
@@ -312,6 +312,54 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   bool receivingByNfc = false;
 
   String rupees(dynamic paise) => '₹${(Money.paise(paise) / 100).toStringAsFixed(2)}';
+
+  Future<void> showWalletScore() async {
+    final cutoff = DateTime.now().toUtc().subtract(const Duration(days: 30));
+    final recentEntries = ledger.where((row) {
+      final createdAt = DateTime.tryParse('${row['created_at']}')?.toUtc();
+      return createdAt != null && !createdAt.isAfter(DateTime.now().toUtc()) && !createdAt.isBefore(cutoff);
+    }).toList();
+    final activeDays = recentEntries
+        .map((row) => DateTime.parse('${row['created_at']}').toUtc().toIso8601String().substring(0, 10))
+        .toSet()
+        .length;
+    final statusPoints = me?['frozen'] == true ? 0 : 38;
+    final activityPoints = recentEntries.length.clamp(0, 6).toInt() * 5;
+    final daysPoints = activeDays.clamp(0, 8).toInt() * 4;
+    final score = statusPoints + activityPoints + daysPoints;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Your wallet score'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Text(
+                '$score/100',
+                style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text('Free Campus Wallet activity score'),
+            const SizedBox(height: 12),
+            Text('Wallet status (max 38 points)  $statusPoints points'),
+            Text('Activity in the last 30 days (max 30 points)  $activityPoints points'),
+            Text('Active days in the last 30 days (max 32 points)  $daysPoints points'),
+            const SizedBox(height: 12),
+            const Text(
+              'This score uses demo wallet activity only. It is not a CIBIL or other credit-bureau score, does not check your credit report, and does not affect loan eligibility.',
+            ),
+          ],
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Done'))],
+      ),
+    );
+  }
 
   Future<void> checkNfcCapabilities() async {
     try {
@@ -596,6 +644,11 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
             Text(rupees(me?['balancePaise']), style: Theme.of(context).textTheme.headlineMedium),
             Text(me?['frozen'] == true ? 'FROZEN' : 'Active'),
             const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: showWalletScore,
+              icon: const Icon(Icons.stars_outlined),
+              label: const Text('Check your wallet score · Free'),
+            ),
             FilledButton(onPressed: topup, child: const Text('Add ₹100')),
             OutlinedButton(onPressed: toggleFreeze, child: Text(me?['frozen'] == true ? 'Unfreeze' : 'Freeze account')),
             const SizedBox(height: 16),

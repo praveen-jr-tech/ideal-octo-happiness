@@ -1718,6 +1718,96 @@ table { border-radius: 14px; }
   font-weight: 500;
 }
 
+.wallet-score-card {
+  display: flex;
+  width: 100%;
+  min-height: 76px;
+  align-items: center;
+  gap: 14px;
+  margin: 6px 0 18px;
+  padding: 13px 16px;
+  color: #183b31;
+  text-align: left;
+  background: linear-gradient(105deg, #e8f7f0, #f7fbf9);
+  border: 1px solid #d8ece2;
+  border-radius: 16px;
+  box-shadow: none;
+}
+
+.wallet-score-card:hover {
+  background: #e0f2e9;
+  transform: translateY(-1px);
+}
+
+.wallet-score-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: #087755;
+  background: #d1eee0;
+  border-radius: 14px;
+  font-size: 22px;
+}
+
+.wallet-score-copy {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+}
+
+.wallet-score-copy strong { font-size: 14px; }
+.wallet-score-copy > span { color: #5d766b; font-size: 12px; }
+.wallet-score-arrow { color: #39715b; font-size: 25px; }
+
+.wallet-score-result {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 18px 0;
+  color: #52665d;
+  font-size: 13px;
+}
+
+.wallet-score-result > strong {
+  color: #087755;
+  font-family: "Manrope", "Segoe UI", sans-serif;
+  font-size: 52px;
+  line-height: 1;
+}
+
+.wallet-score-result small {
+  color: #708077;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.wallet-score-disclaimer {
+  margin: 0;
+  padding: 12px 14px;
+  color: #53665d;
+  background: #f3f7f4;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.wallet-score-breakdown { padding-top: 16px; }
+.wallet-score-breakdown h3 { margin: 0 0 8px; font-size: 14px; }
+.wallet-score-breakdown p {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 11px 0;
+  color: #58665f;
+  border-bottom: 1px solid #edf0ed;
+  font-size: 13px;
+}
+.wallet-score-breakdown p strong { color: #263d32; white-space: nowrap; }
+.wallet-score-breakdown p small { color: #78877f; font-size: 11px; }
+
 .wallet-chips {
   display: flex;
   gap: 8px;

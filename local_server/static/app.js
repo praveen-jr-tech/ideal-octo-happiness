@@ -428,7 +428,6 @@ async function loginWithId() {
   else if (data.role === 'merchant') await loadMerchantProfile();
   else if (data.role === 'admin') await loadAdmin();
   else throw new Error('Account role is not supported');
-  setFlash('Welcome back.', 'ok');
 }
 
 async function loginStudent() {
@@ -789,6 +788,28 @@ document.getElementById('s-qr-shortcut').addEventListener('click', () => {
 
 document.getElementById('s-history-shortcut').addEventListener('click', () => {
   setStudentTab('money');
+});
+
+document.getElementById('wallet-score-open').addEventListener('click', () => {
+  const now = Date.now();
+  const recentEntries = studentLedgerEntries.filter((entry) => {
+    const createdAt = new Date(entry.created_at).getTime();
+    return Number.isFinite(createdAt) && createdAt <= now && createdAt >= now - 30 * 24 * 60 * 60 * 1000;
+  });
+  const activeDays = new Set(recentEntries.map((entry) =>
+    new Date(entry.created_at).toISOString().slice(0, 10)));
+  const statusPoints = state.account?.frozen === true ? 0 : 38;
+  const activityPoints = Math.min(recentEntries.length, 6) * 5;
+  const daysPoints = Math.min(activeDays.size, 8) * 4;
+  document.getElementById('wallet-score-value').textContent = statusPoints + activityPoints + daysPoints;
+  document.getElementById('wallet-score-status-points').textContent = `${statusPoints} points`;
+  document.getElementById('wallet-score-activity-points').textContent = `${activityPoints} points`;
+  document.getElementById('wallet-score-days-points').textContent = `${daysPoints} points`;
+  document.getElementById('wallet-score-dialog').showModal();
+});
+
+document.getElementById('wallet-score-close').addEventListener('click', () => {
+  document.getElementById('wallet-score-dialog').close();
 });
 
 document.getElementById('friend-search').addEventListener('input', (event) => {

@@ -1,57 +1,36 @@
-# Public deployment guide
+# Public test deployment guide
 
 This project is set up for a public backend deployment using Render.
 
-## 1) Push to GitHub
+## 1) Create the Render services
 
-Commit the project and push to a GitHub repository.
+1. In Render, choose **New > Blueprint** and connect this GitHub repository.
+2. Review `render.yaml`; it creates the API and a PostgreSQL database in test mode.
+3. Apply the Blueprint. Render generates private `JWT_SECRET` and `ADMIN_KEY` values.
 
-## 2) Deploy backend on Render
+The API applies `backend/schema.sql` when it starts. Do not put Render secrets in
+the app, source code, or chat. The app authenticates with student ID/PIN and a
+short-lived login token; it does not need a shared API key.
 
-1. Open https://render.com
-2. Create a new Web Service
-3. Connect the GitHub repository
-4. Set root directory to `backend`
-5. Build command: `npm install`
-6. Start command: `npm start`
-7. Add environment variables:
-   - `PORT=10000`
-   - `DATABASE_URL` from the Postgres database
-   - `JWT_SECRET` = a secure random string
-   - `ADMIN_KEY` = a secure admin key
-   - `TEST_MODE=true`
-   - `QR_TTL_SECONDS=45`
+## 2) Seed fictional test accounts
 
-Render can also create the Postgres database automatically from `render.yaml` if you use the Blueprint import option.
+From the Render service shell, run `npm run seed` once. This creates fictional
+test accounts (`STU1001` / `1234`, `STU1002` / `1234`, and `CANTEEN1` / `1234`).
+Never use real student data or real payment credentials with this prototype.
 
-## 3) Seed the database
+## 3) Build an Android test APK
 
-After deployment completes, run:
+The repository's **Android test APK** GitHub Actions workflow generates the
+Flutter Android scaffold and builds an installable debug APK. Run it from the
+Actions tab and enter the deployed Render API URL (for example,
+`https://campus-wallet-api.onrender.com`). Download the
+`campus-wallet-test-apk` artifact from the completed workflow run.
 
-```bash
-npm run seed
-```
+For local network testing, the API URL may instead be your computer's LAN IP
+and port; the phone must be on the same Wi-Fi and the API server must be running.
 
-## 4) Use the public API in Flutter
+## 4) Scope and limitations
 
-In the app, set the API base to the deployed URL:
-
-```bash
-cd student_app
-flutter pub get
-flutter run --dart-define=API_BASE=https://your-render-service.onrender.com
-```
-
-Or build a release APK:
-
-```bash
-flutter build apk --dart-define=API_BASE=https://your-render-service.onrender.com
-```
-
-## 5) Admin access
-
-Use the same `ADMIN_KEY` that you set in Render.
-
-## 6) Important note
-
-This project is still a test-mode wallet prototype and should not be treated as a real-money app yet.
+This is a test-mode wallet prototype: balances are demo ledger entries only,
+NFC/QR transfers are not real payments, and the APK is a debug-signed build
+intended for direct testing—not a Play Store release.

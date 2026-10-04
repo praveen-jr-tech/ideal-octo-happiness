@@ -1,0 +1,67 @@
+name: Android test APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base:
+        description: Public or LAN URL of the Campus Wallet test API, without a trailing slash
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android build scaffolding
+        shell: bash
+        run: |
+          build_dir="$RUNNER_TEMP/campus-wallet-android"
+          mkdir -p "$build_dir"
+          flutter create --project-name student_app --org com.example --platforms android "$build_dir"
+          cp -R student_app/lib "$build_dir/"
+          cp student_app/pubspec.yaml "$build_dir/"
+          cp student_app/android/app/src/main/AndroidManifest.xml "$build_dir/android/app/src/main/AndroidManifest.xml"
+          mkdir -p "$build_dir/android/app/src/main/kotlin/com/example/student_app"
+          cp student_app/android/app/src/main/kotlin/com/example/student_app/*.kt "$build_dir/android/app/src/main/kotlin/com/example/student_app/"
+          cp -R student_app/android/app/src/main/res/values/. "$build_dir/android/app/src/main/res/values/"
+          mkdir -p "$build_dir/android/app/src/main/res/xml"
+          cp student_app/android/app/src/main/res/xml/apdu_service.xml "$build_dir/android/app/src/main/res/xml/"
+
+      - name: Build installable debug APK
+        shell: bash
+        env:
+          API_BASE: ${{ inputs.api_base }}
+        run: |
+          if [[ ! "$API_BASE" =~ ^https?://[^[:space:]]+$ ]]; then
+            echo "Enter a valid HTTP or HTTPS API URL."
+            exit 1
+          fi
+          cd "$RUNNER_TEMP/campus-wallet-android"
+          flutter pub get
+          flutter build apk --debug --dart-define="API_BASE=$API_BASE"
+
+      - name: Upload test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: campus-wallet-test-apk
+          path: ${{ runner.temp }}/campus-wallet-android/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7

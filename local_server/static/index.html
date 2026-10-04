@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/static/app.css?v=20261003-7" />
+    <link rel="stylesheet" href="/static/app.css?v=20261004-1" />
   </head>
   <body>
     <div class="shell">
@@ -24,8 +24,8 @@
       <p id="flash" class="flash" hidden></p>
 
       <section id="view-home" class="panel">
-        <h2>Welcome back</h2>
-        <p class="lede">Sign in to your campus wallet.</p>
+        <h2>Campus payments, made simple</h2>
+        <p class="lede">Sign in to access your campus wallet.</p>
         <label>ID <input id="login-id" autocomplete="username" /></label>
         <label>Password <input id="login-password" type="password" autocomplete="current-password" /></label>
         <button id="login-submit" type="button">Continue</button>
@@ -82,7 +82,16 @@
             <button class="quick-action" id="s-history-shortcut" type="button"><span class="quick-icon">↻</span><span>Activity</span></button>
           </div>
 
-          <section class="friends-section">
+            <button id="wallet-score-open" class="wallet-score-card" type="button">
+              <span class="wallet-score-icon" aria-hidden="true">★</span>
+              <span class="wallet-score-copy">
+                <strong>Check your wallet score</strong>
+                <span>Free · based on your Campus Wallet activity</span>
+              </span>
+              <span class="wallet-score-arrow" aria-hidden="true">›</span>
+            </button>
+
+            <section class="friends-section">
             <div class="friends-heading">
               <div>
                 <h3>People</h3>
@@ -249,6 +258,24 @@
       </div>
     </dialog>
 
+    <dialog id="wallet-score-dialog" class="app-dialog wallet-score-dialog" aria-labelledby="wallet-score-title">
+      <div class="dialog-header">
+        <div><p class="dialog-kicker">FREE WALLET CHECK</p><h2 id="wallet-score-title">Your wallet score</h2></div>
+        <button id="wallet-score-close" class="icon-button" type="button" aria-label="Close wallet score">×</button>
+      </div>
+      <div class="wallet-score-result">
+        <strong><span id="wallet-score-value">0</span><small>/100</small></strong>
+        <span>Campus Wallet activity score</span>
+      </div>
+      <p class="wallet-score-disclaimer">This free score summarizes activity in this demo wallet only. It is not a CIBIL or other credit-bureau score, does not check your credit report, and does not affect loan eligibility.</p>
+      <section class="wallet-score-breakdown" aria-label="How this score is calculated">
+        <h3>How your score is calculated</h3>
+        <p><span>Wallet status <small>(max 38 points)</small></span><strong id="wallet-score-status-points"></strong></p>
+        <p><span>Activity in the last 30 days <small>(max 30 points)</small></span><strong id="wallet-score-activity-points"></strong></p>
+        <p><span>Active days in the last 30 days <small>(max 32 points)</small></span><strong id="wallet-score-days-points"></strong></p>
+      </section>
+    </dialog>
+
     <dialog id="my-qr-dialog" class="app-dialog qr-dialog" aria-labelledby="my-qr-title">
       <div class="dialog-header">
         <div><p class="dialog-kicker">CAMPUS WALLET</p><h2 id="my-qr-title">My QR</h2></div>
@@ -304,6 +331,6 @@
     </dialog>
     <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-    <script src="/static/app.js?v=20261003-7"></script>
+    <script src="/static/app.js?v=20261004-3"></script>
   </body>
 </html>
