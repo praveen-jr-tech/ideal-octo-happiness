@@ -45,9 +45,10 @@ class MainActivity : FlutterActivity(), NfcAdapter.ReaderCallback {
                     "capabilities" -> result.success(
                         mapOf(
                             "reader" to (nfcAdapter?.isEnabled == true),
-                            "hostCardEmulation" to packageManager.hasSystemFeature(
-                                PackageManager.FEATURE_NFC_HOST_CARD_EMULATION
-                            ) && nfcAdapter?.isEnabled == true,
+                            "hostCardEmulation" to (
+                                packageManager.hasSystemFeature(PackageManager.FEATURE_NFC_HOST_CARD_EMULATION) &&
+                                    nfcAdapter?.isEnabled == true
+                                ),
                         )
                     )
                     "startReader" -> startReader(result)
