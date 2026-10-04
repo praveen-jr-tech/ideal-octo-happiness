@@ -103,7 +103,9 @@ flutter pub get
 flutter run
 ```
 
-`flutter create .` adds `android/`, `ios/`, `web/` without replacing `lib/`.
+`android/` already contains the NFC manifest and native reader/HCE services.
+Run `flutter create .` to generate the remaining Flutter platform scaffolding,
+then build and run the app as usual.
 
 **API base** is `lib/config.dart`:
 
@@ -112,6 +114,10 @@ flutter run
 - Physical phone: your PC’s LAN IP, and allow that origin through any firewall.
 
 Flow: sign up or log in as `STU1001` → Add ₹100 → copy QR text → log in as canteen `CANTEEN1` → charge.
+
+For NFC testing, run the app on two NFC-capable Android phones; the receiving
+phone must support Host Card Emulation (HCE). Transfers are test-ledger only,
+PIN-free, limited to ₹500 per tap and ₹2,000 per sender per UTC day.
 
 ## What not to do
 
