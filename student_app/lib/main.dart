@@ -25,6 +25,35 @@ class CampusWalletApp extends StatelessWidget {
       title: 'Campus Wallet',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0F6C5C)),
+        scaffoldBackgroundColor: const Color(0xFFEDF3F1),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF173431),
+          foregroundColor: Colors.white,
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFFD9E7E1)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFFD9E7E1)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFF0A8B6B), width: 2),
+          ),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF0A8B6B),
+            foregroundColor: Colors.white,
+            minimumSize: const Size(0, 48),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        ),
         useMaterial3: true,
       ),
       home: const RoleScreen(),
@@ -65,6 +94,7 @@ class _RoleScreenState extends State<RoleScreen> {
       };
       Navigator.pushReplacement(context, MaterialPageRoute<void>(builder: (_) => screen));
     } catch (e) {
+      if (!mounted) return;
       setState(() => error = e.toString());
     } finally {
       if (mounted) setState(() => busy = false);
@@ -79,36 +109,94 @@ class _RoleScreenState extends State<RoleScreen> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 460),
           child: ListView(
-            padding: const EdgeInsets.all(20),
-            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(20, 28, 20, 32),
             children: [
-              Text('Campus payments, made simple', style: Theme.of(context).textTheme.headlineMedium),
-              const SizedBox(height: 24),
-              TextField(
-                controller: collegeId,
-                textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(labelText: 'ID'),
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF173431),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'CAMPUS WALLET',
+                      style: TextStyle(color: Color(0xFFB9D9C9), fontWeight: FontWeight.w700, letterSpacing: 1.2),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Campus payments, made simple',
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: Colors.white, fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('Sign in to access your campus wallet.', style: TextStyle(color: Color(0xFFD7E7DF))),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                margin: EdgeInsets.zero,
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      TextField(
+                        controller: collegeId,
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(labelText: 'Student, canteen, or admin ID'),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: password,
+                        obscureText: true,
+                        onSubmitted: (_) => signIn(),
+                        decoration: const InputDecoration(labelText: 'PIN or admin key'),
+                      ),
+                      if (error != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: Text(error!, style: const TextStyle(color: Colors.red)),
+                        ),
+                      const SizedBox(height: 16),
+                      SizedBox(width: double.infinity, child: FilledButton(onPressed: busy ? null : signIn, child: const Text('Continue'))),
+                      TextButton(
+                        onPressed: busy
+                            ? null
+                            : () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute<void>(builder: (_) => const StudentAuthScreen()),
+                                );
+                              },
+                        child: const Text('Create a student account'),
+                      ),
+                      TextButton(
+                        onPressed: busy
+                            ? null
+                            : () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute<void>(builder: (_) => const MerchantAuthScreen()),
+                                );
+                              },
+                        child: const Text('Canteen portal login'),
+                      ),
+                    ],
+                  ),
+                ),
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: password,
-                obscureText: true,
-                onSubmitted: (_) => signIn(),
-                decoration: const InputDecoration(labelText: 'Password'),
+              Text(
+                'API: $apiBase',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF5E6F78)),
               ),
-              if (error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(error!, style: const TextStyle(color: Colors.red))),
-              const SizedBox(height: 20),
-              FilledButton(onPressed: busy ? null : signIn, child: const Text('Continue')),
-              TextButton(
-                onPressed: busy
-                    ? null
-                    : () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute<void>(builder: (_) => const StudentAuthScreen()),
-                        );
-                      },
-                child: const Text('Create a student account'),
+              const SizedBox(height: 4),
+              Text(
+                'For a physical phone, this must be your computer’s LAN address, not 127.0.0.1.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF5E6F78)),
               ),
             ],
           ),
@@ -139,11 +227,13 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   Future<void> refresh() async {
     try {
       final result = await api.get('/admin/accounts');
+      if (!mounted) return;
       setState(() {
         accounts = result['accounts'] as List<dynamic>? ?? [];
         error = null;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => error = e.toString());
     }
   }
@@ -173,16 +263,29 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       body: RefreshIndicator(
         onRefresh: refresh,
         child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
           children: [
-            if (error != null) Padding(padding: const EdgeInsets.all(16), child: Text(error!, style: const TextStyle(color: Colors.red))),
-            for (final account in accounts)
-              ListTile(
-                leading: CircleAvatar(
-                  backgroundImage: profilePhoto(account['photoData']),
-                  child: profilePhoto(account['photoData']) == null ? const Icon(Icons.person_outline) : null,
+            Text('Campus accounts', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 12),
+            if (error != null)
+              Card(
+                color: const Color(0xFFFFF0EF),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(error!, style: const TextStyle(color: Colors.red)),
                 ),
-                title: Text(account['name']?.toString() ?? ''),
-                subtitle: Text('${account['role'] == 'merchant' ? 'Canteen' : 'Student'} · ${account['collegeId']}'),
+              ),
+            for (final account in accounts)
+              Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundImage: profilePhoto(account['photoData']),
+                    child: profilePhoto(account['photoData']) == null ? const Icon(Icons.person_outline) : null,
+                  ),
+                  title: Text(account['name']?.toString() ?? ''),
+                  subtitle: Text('${account['role'] == 'merchant' ? 'Canteen' : 'Student'} · ${account['collegeId']}'),
+                ),
               ),
           ],
         ),
@@ -242,6 +345,7 @@ class _StudentAuthScreenState extends State<StudentAuthScreen> {
         MaterialPageRoute<void>(builder: (_) => const StudentHomeScreen()),
       );
     } catch (e) {
+      if (!mounted) return;
       setState(() => error = e.toString());
     } finally {
       if (mounted) setState(() => busy = false);
@@ -381,11 +485,13 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
         nfcHostCardEmulationAvailable = capabilities?['hostCardEmulation'] == true;
       });
     } on PlatformException catch (e) {
-      if (mounted) setState(() => nfcStatus = e.message ?? 'Could not check NFC support');
+      if (!mounted) return;
+      setState(() => nfcStatus = e.message ?? 'Could not check NFC support');
     }
   }
 
   Future<void> startNfcReceive() async {
+    if (!mounted) return;
     setState(() {
       nfcBusy = true;
       nfcStatus = null;
@@ -395,24 +501,29 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
         throw ApiException('This Android phone cannot receive NFC taps');
       }
       final session = await api.post('/students/nfc/session', {});
+      if (!mounted) return;
       await _nfcChannel.invokeMethod<void>('setReceiveToken', session['token']);
       _receiveExpiryTimer?.cancel();
       _receiveExpiryTimer = Timer(const Duration(minutes: 2), () {
         if (!mounted) return;
         _nfcChannel.invokeMethod<void>('clearReceiveToken');
+        if (!mounted) return;
         setState(() {
           receivingByNfc = false;
           nfcStatus = 'NFC receive session expired. Start a new one to receive.';
         });
       });
+      if (!mounted) return;
       setState(() {
         receivingByNfc = true;
         nfcStatus = 'Ready to receive one tap payment for 2 minutes.';
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => nfcStatus = e.toString());
     } finally {
-      if (mounted) setState(() => nfcBusy = false);
+      if (!mounted) return;
+      setState(() => nfcBusy = false);
     }
   }
 
@@ -420,9 +531,11 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     _receiveExpiryTimer?.cancel();
     try {
       await _nfcChannel.invokeMethod<void>('clearReceiveToken');
-      if (mounted) setState(() => receivingByNfc = false);
+      if (!mounted) return;
+      setState(() => receivingByNfc = false);
     } on PlatformException catch (e) {
-      if (mounted) setState(() => nfcStatus = e.message ?? 'Could not stop NFC receive mode');
+      if (!mounted) return;
+      setState(() => nfcStatus = e.message ?? 'Could not stop NFC receive mode');
     }
   }
 
@@ -532,17 +645,20 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     try {
       final profile = await api.get('/students/me');
       final book = await api.get('/students/ledger');
+      if (!mounted) return;
       setState(() {
         me = profile;
         ledger = book['entries'] as List<dynamic>? ?? [];
         error = null;
       });
+      if (!mounted) return;
       if (profile['frozen'] != true) {
         await loadQr();
       } else {
         setState(() => qr = null);
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() => error = e.toString());
     }
   }
@@ -550,8 +666,10 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   Future<void> loadQr() async {
     try {
       final data = await api.get('/students/qr');
+      if (!mounted) return;
       setState(() => qr = data);
     } catch (e) {
+      if (!mounted) return;
       setState(() => error = e.toString());
     }
   }
@@ -561,6 +679,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
       await api.post('/students/test-topup', {'amountPaise': 10000});
       await refresh();
     } catch (e) {
+      if (!mounted) return;
       setState(() => error = e.toString());
     }
   }
@@ -588,6 +707,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
       await api.post('/students/freeze', {'frozen': !frozen, 'pin': pinController.text});
       await refresh();
     } catch (e) {
+      if (!mounted) return;
       setState(() => error = e.toString());
     }
   }
@@ -614,6 +734,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   Widget build(BuildContext context) {
     final token = qr?['token']?.toString() ?? '';
     final avatar = profilePhoto(me?['photoData']);
+    final isFrozen = me?['frozen'] == true;
     return Scaffold(
       appBar: AppBar(
         title: Text(me?['collegeId']?.toString() ?? 'Student'),
@@ -631,86 +752,197 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
       body: RefreshIndicator(
         onRefresh: refresh,
         child: ListView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
           children: [
-            if (error != null) Text(error!, style: const TextStyle(color: Colors.red)),
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 30,
-                  backgroundImage: avatar,
-                  child: avatar == null ? const Icon(Icons.person_outline) : null,
+            if (error != null)
+              Card(
+                color: const Color(0xFFFFF0EF),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(error!, style: const TextStyle(color: Colors.red)),
                 ),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(me?['name']?.toString() ?? 'Student', style: Theme.of(context).textTheme.titleMedium),
-                    Text(me?['collegeId']?.toString() ?? '', style: Theme.of(context).textTheme.bodySmall),
-                  ],
+              ),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFE7F5FF), Color(0xFFEDF8FF), Color(0xFFE2F0D4)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'CAMPUS WALLET',
+                    style: TextStyle(color: Color(0xFF056E57), fontWeight: FontWeight.w800, letterSpacing: 1.1),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Hey, ${me?['name']?.toString() ?? 'Student'}',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800, color: const Color(0xFF10252E)),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text('Your campus money, all in one place.'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF173431), Color(0xFF056E57)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Wallet balance', style: TextStyle(color: Color(0xFFD7E7DF))),
+                        const SizedBox(height: 6),
+                        Text(
+                          rupees(me?['balancePaise']),
+                          style: Theme.of(context).textTheme.headlineMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(isFrozen ? 'Wallet frozen' : 'Ready to pay', style: const TextStyle(color: Color(0xFFD7E7DF))),
+                      ],
+                    ),
+                  ),
+                  CircleAvatar(
+                    radius: 28,
+                    backgroundColor: Colors.white,
+                    backgroundImage: avatar,
+                    child: avatar == null ? const Icon(Icons.person_outline, color: Color(0xFF173431)) : null,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.icon(onPressed: topup, icon: const Icon(Icons.add), label: const Text('Add ₹100')),
+                OutlinedButton.icon(
+                  onPressed: toggleFreeze,
+                  icon: const Icon(Icons.pause_circle_outline),
+                  label: Text(isFrozen ? 'Unfreeze wallet' : 'Freeze wallet'),
                 ),
               ],
             ),
             const SizedBox(height: 8),
-            Text(rupees(me?['balancePaise']), style: Theme.of(context).textTheme.headlineMedium),
-            Text(me?['frozen'] == true ? 'FROZEN' : 'Active'),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: showWalletScore,
-              icon: const Icon(Icons.stars_outlined),
-              label: const Text('Check your wallet score · Free'),
+            Card(
+              margin: EdgeInsets.zero,
+              child: ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: Color(0xFFEBFAF6),
+                  child: Icon(Icons.stars_outlined, color: Color(0xFF056E57)),
+                ),
+                title: const Text('Check your wallet score', style: TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: const Text('Free · based on your Campus Wallet activity'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: showWalletScore,
+              ),
             ),
-            FilledButton(onPressed: topup, child: const Text('Add ₹100')),
-            OutlinedButton(onPressed: toggleFreeze, child: Text(me?['frozen'] == true ? 'Unfreeze' : 'Freeze account')),
             const SizedBox(height: 16),
-            Text('NFC tap to pay', style: Theme.of(context).textTheme.titleMedium),
-            Text('Test-wallet transfers only · up to ₹500 per tap · ₹2,000 per day · no PIN'),
+            Text('NFC tap to pay', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
             const SizedBox(height: 8),
-            FilledButton.icon(
-              onPressed: nfcBusy || me?['frozen'] == true ? null : sendByNfc,
-              icon: const Icon(Icons.nfc),
-              label: Text(nfcBusy ? 'Waiting for tap…' : 'Send by tap'),
-            ),
-            OutlinedButton.icon(
-              onPressed: nfcBusy || me?['frozen'] == true
-                  ? null
-                  : receivingByNfc
-                      ? stopNfcReceive
-                      : startNfcReceive,
-              icon: Icon(receivingByNfc ? Icons.stop_circle_outlined : Icons.contactless),
-              label: Text(receivingByNfc ? 'Stop receiving by tap' : 'Receive by tap'),
-            ),
-            if (nfcStatus != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(nfcStatus!),
+            Card(
+              margin: EdgeInsets.zero,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Test-wallet transfers only · up to ₹500 per tap · ₹2,000 per day · no PIN'),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: nfcBusy || isFrozen ? null : sendByNfc,
+                        icon: const Icon(Icons.nfc),
+                        label: Text(nfcBusy ? 'Waiting for tap…' : 'Send by tap'),
+                      ),
+                    ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: nfcBusy || isFrozen
+                            ? null
+                            : receivingByNfc
+                                ? stopNfcReceive
+                                : startNfcReceive,
+                        icon: Icon(receivingByNfc ? Icons.stop_circle_outlined : Icons.contactless),
+                        label: Text(receivingByNfc ? 'Stop receiving by tap' : 'Receive by tap'),
+                      ),
+                    ),
+                    if (nfcStatus != null) ...[
+                      const SizedBox(height: 4),
+                      Text(nfcStatus!),
+                    ],
+                    if (!nfcAvailable || !nfcHostCardEmulationAvailable) ...[
+                      const SizedBox(height: 4),
+                      const Text('Two NFC-capable Android phones are required; one must support card emulation.'),
+                    ],
+                  ],
+                ),
               ),
-            if (!nfcAvailable || !nfcHostCardEmulationAvailable)
-              const Padding(
-                padding: EdgeInsets.only(top: 4),
-                child: Text('Two NFC-capable Android phones are required; one must support card emulation.'),
-              ),
-            const SizedBox(height: 16),
+            ),
             if (token.isNotEmpty) ...[
-              Center(
-                child: QrImageView(data: token, size: 200),
-              ),
-              SelectableText(token),
-              TextButton(
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: token));
-                },
-                child: const Text('Copy QR text'),
+              const SizedBox(height: 16),
+              Card(
+                margin: EdgeInsets.zero,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Text('My payment QR', style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 8),
+                      QrImageView(data: token, size: 200),
+                      SelectableText(token),
+                      TextButton.icon(
+                        onPressed: () => Clipboard.setData(ClipboardData(text: token)),
+                        icon: const Icon(Icons.copy),
+                        label: const Text('Copy QR text'),
+                      ),
+                    ],
+                  ),
               ),
             ],
             const SizedBox(height: 16),
-            Text('History', style: Theme.of(context).textTheme.titleMedium),
-            for (final row in ledger)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text('${ledgerTypeLabel(row['entry_type'])}  ${row['amount_paise']} paise'),
-                subtitle: Text([ledgerNote(row), '${row['created_at']}'].where((value) => value.isNotEmpty).join(' · ')),
-              ),
+            Text('Activity', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 8),
+            Card(
+              margin: EdgeInsets.zero,
+              child: ledger.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('No wallet activity yet.'),
+                    )
+                  : Column(
+                      children: [
+                        for (final row in ledger)
+                          ListTile(
+                            leading: const CircleAvatar(
+                              backgroundColor: Color(0xFFEBFAF6),
+                              child: Icon(Icons.receipt_long, color: Color(0xFF056E57)),
+                            ),
+                            title: Text(ledgerTypeLabel(row['entry_type'])),
+                            subtitle: Text([ledgerNote(row), '${row['created_at']}'].where((value) => value.isNotEmpty).join(' · ')),
+                            trailing: Text(rupees(row['amount_paise']), style: const TextStyle(fontWeight: FontWeight.w700)),
+                          ),
+                      ],
+                    ),
+            ),
           ],
         ),
       ),
@@ -750,38 +982,65 @@ class _MerchantAuthScreenState extends State<MerchantAuthScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Canteen login')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          TextField(controller: collegeId, decoration: const InputDecoration(labelText: 'Merchant college ID')),
-          TextField(controller: pin, obscureText: true, decoration: const InputDecoration(labelText: 'PIN')),
-          if (error != null) Text(error!, style: const TextStyle(color: Colors.red)),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: busy
-                ? null
-                : () async {
-                    setState(() => busy = true);
-                    try {
-                      final data = await api.post('/merchants/login', {
-                        'collegeId': collegeId.text.trim(),
-                        'pin': pin.text.trim(),
-                      });
-                      await api.saveToken(data['token'] as String);
-                      if (!context.mounted) return;
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute<void>(builder: (_) => const MerchantHomeScreen()),
-                      );
-                    } catch (e) {
-                      setState(() => error = e.toString());
-                    } finally {
-                      if (mounted) setState(() => busy = false);
-                    }
-                  },
-            child: const Text('Log in'),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              Text('Canteen', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 4),
+              const Text('Sign in to collect campus payments.'),
+              const SizedBox(height: 16),
+              Card(
+                margin: EdgeInsets.zero,
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      TextField(controller: collegeId, decoration: const InputDecoration(labelText: 'Canteen ID')),
+                      const SizedBox(height: 12),
+                      TextField(controller: pin, obscureText: true, decoration: const InputDecoration(labelText: 'PIN')),
+                      if (error != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: Text(error!, style: const TextStyle(color: Colors.red)),
+                        ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: busy
+                              ? null
+                              : () async {
+                                  setState(() => busy = true);
+                                  try {
+                                    final data = await api.post('/merchants/login', {
+                                      'collegeId': collegeId.text.trim(),
+                                      'pin': pin.text.trim(),
+                                    });
+                                    await api.saveToken(data['token'] as String);
+                                    if (!context.mounted) return;
+                                    Navigator.pushReplacement(
+                                      context,
+                                      MaterialPageRoute<void>(builder: (_) => const MerchantHomeScreen()),
+                                    );
+                                  } catch (e) {
+                                    if (!mounted) return;
+                                    setState(() => error = e.toString());
+                                  } finally {
+                                    if (mounted) setState(() => busy = false);
+                                  }
+                                },
+                          child: const Text('Log in'),
+                        ),
+                      ),
+                    ],
+                  ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -805,12 +1064,14 @@ class _MerchantHomeScreenState extends State<MerchantHomeScreen> {
     try {
       final profile = await api.get('/merchants/me');
       final book = await api.get('/merchants/ledger');
+      if (!mounted) return;
       setState(() {
         me = profile;
         ledger = book['entries'] as List<dynamic>? ?? [];
         error = null;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => error = e.toString());
     }
   }
@@ -818,6 +1079,7 @@ class _MerchantHomeScreenState extends State<MerchantHomeScreen> {
   Future<void> charge() async {
     final rupeeValue = double.tryParse(rupees.text.trim());
     if (rupeeValue == null || rupeeValue <= 0) {
+      if (!mounted) return;
       setState(() => error = 'Enter a rupee amount');
       return;
     }
@@ -830,6 +1092,7 @@ class _MerchantHomeScreenState extends State<MerchantHomeScreen> {
       token.clear();
       await refresh();
     } catch (e) {
+      if (!mounted) return;
       setState(() => error = e.toString());
     }
   }
@@ -864,31 +1127,80 @@ class _MerchantHomeScreenState extends State<MerchantHomeScreen> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
         children: [
-          Text('Sales balance: ₹${(Money.paise(me?['balancePaise']) / 100).toStringAsFixed(2)}'),
-          if (error != null) Text(error!, style: const TextStyle(color: Colors.red)),
-          TextField(
-            controller: token,
-            decoration: const InputDecoration(labelText: 'Student QR text'),
-            minLines: 2,
-            maxLines: 3,
-          ),
-          TextField(
-            controller: rupees,
-            decoration: const InputDecoration(labelText: 'Charge (₹)'),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          ),
-          const SizedBox(height: 8),
-          FilledButton(onPressed: charge, child: const Text('Charge')),
-          const SizedBox(height: 16),
-          Text('Sales history', style: Theme.of(context).textTheme.titleMedium),
-          for (final row in ledger)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-                title: Text('${ledgerTypeLabel(row['entry_type'])}  ${row['amount_paise']} paise'),
-                subtitle: Text(ledgerNote(row)),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: [Color(0xFF173431), Color(0xFF056E57)]),
+              borderRadius: BorderRadius.circular(8),
             ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Sales balance', style: TextStyle(color: Color(0xFFD7E7DF))),
+                const SizedBox(height: 6),
+                Text(
+                  '₹${(Money.paise(me?['balancePaise']) / 100).toStringAsFixed(2)}',
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.w800),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text('Collect a payment', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 8),
+          Card(
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  if (error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(error!, style: const TextStyle(color: Colors.red)),
+                    ),
+                  TextField(
+                    controller: token,
+                    decoration: const InputDecoration(labelText: 'Student QR text'),
+                    minLines: 2,
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: rupees,
+                    decoration: const InputDecoration(labelText: 'Charge (₹)'),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(width: double.infinity, child: FilledButton(onPressed: charge, child: const Text('Charge'))),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text('Activity', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 8),
+          Card(
+            margin: EdgeInsets.zero,
+            child: ledger.isEmpty
+                ? const Padding(padding: EdgeInsets.all(16), child: Text('No sales yet.'))
+                : Column(
+                    children: [
+                      for (final row in ledger)
+                        ListTile(
+                          leading: const CircleAvatar(
+                            backgroundColor: Color(0xFFEBFAF6),
+                            child: Icon(Icons.receipt_long, color: Color(0xFF056E57)),
+                          ),
+                          title: Text(ledgerTypeLabel(row['entry_type'])),
+                          subtitle: Text(ledgerNote(row)),
+                          trailing: Text('₹${(Money.paise(row['amount_paise']) / 100).toStringAsFixed(2)}'),
+                        ),
+                    ],
+                  ),
+          ),
         ],
       ),
     );

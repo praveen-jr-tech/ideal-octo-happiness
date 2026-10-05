@@ -13,15 +13,18 @@ function verifyPin(pin, pinHash) {
 }
 
 function assertPinFormat(pin) {
-  if (!/^\d{4,8}$/.test(String(pin || ""))) {
+  const cleaned = String(pin ?? "").trim();
+  if (!/^\d{4,8}$/.test(cleaned)) {
     throw new HttpError(400, "PIN must be 4 to 8 digits");
   }
 }
 
 function assertCollegeId(collegeId) {
-  if (!/^[A-Za-z0-9]{3,32}$/.test(String(collegeId || ""))) {
+  const cleaned = String(collegeId ?? "").trim();
+  if (!/^[A-Za-z0-9]{3,32}$/.test(cleaned)) {
     throw new HttpError(400, "collegeId must be 3-32 letters or digits");
   }
+  return cleaned.toUpperCase();
 }
 
 function signToken(config, account) {

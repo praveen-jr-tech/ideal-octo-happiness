@@ -78,6 +78,8 @@ Base: `http://localhost:3000`
 | POST | `/students/login` | public | JWT |
 | GET | `/students/me` | student | profile, frozen, **computed** balance |
 | GET | `/students/directory?q=...` | student | search active students by name or campus ID |
+| GET | `/students/chat/{collegeId}` | student | messages and peer transfers with one student |
+| POST | `/students/messages` | student | save a peer message `{ collegeId, message }` |
 | POST | `/students/transfer` | student | test-only atomic peer transfer `{ collegeId, amountPaise, pin, note? }` |
 | POST | `/students/nfc/session` | student | create a two-minute, one-use recipient token for Android HCE |
 | POST | `/students/nfc/transfer` | student | PIN-free test transfer `{ recipientToken, amountPaise, note? }`, capped at ₹500 per tap and ₹2,000 per UTC day |

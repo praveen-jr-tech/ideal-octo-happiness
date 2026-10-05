@@ -181,6 +181,15 @@ def init_db(conn: sqlite3.Connection) -> None:
           note TEXT,
           created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS chat_messages (
+          id TEXT PRIMARY KEY,
+          sender_account_id TEXT NOT NULL REFERENCES accounts (id),
+          recipient_account_id TEXT NOT NULL REFERENCES accounts (id),
+          body TEXT NOT NULL CHECK (length(body) BETWEEN 1 AND 1000),
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS chat_messages_participants_created
+          ON chat_messages (sender_account_id, recipient_account_id, created_at);
         CREATE TABLE IF NOT EXISTS qr_tokens (
           id TEXT PRIMARY KEY,
           student_id TEXT NOT NULL REFERENCES accounts (id),
@@ -222,6 +231,19 @@ def ensure_database() -> None:
                  expires_at TEXT NOT NULL,
                  created_at TEXT NOT NULL
                )"""
+        )
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS chat_messages (
+                 id TEXT PRIMARY KEY,
+                 sender_account_id TEXT NOT NULL REFERENCES accounts (id),
+                 recipient_account_id TEXT NOT NULL REFERENCES accounts (id),
+                 body TEXT NOT NULL CHECK (length(body) BETWEEN 1 AND 1000),
+                 created_at TEXT NOT NULL
+               )"""
+        )
+        conn.execute(
+            """CREATE INDEX IF NOT EXISTS chat_messages_participants_created
+               ON chat_messages (sender_account_id, recipient_account_id, created_at)"""
         )
         conn.commit()
     finally:
@@ -320,15 +342,37 @@ def read_token(header: str | None) -> dict:
 
 
 def assert_college_id(college_id: str) -> str:
-    if not re.fullmatch(r"[A-Za-z0-9]{3,32}", college_id or ""):
+    cleaned = str(college_id or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9]{3,32}", cleaned):
         raise ApiError(400, "collegeId must be 3-32 letters or digits")
-    return college_id.upper()
+    return cleaned.upper()
 
 
 def assert_pin(pin: str) -> str:
-    if not re.fullmatch(r"\d{4,8}", pin or ""):
+    cleaned = str(pin or "").strip()
+    if not re.fullmatch(r"\d{4,8}", cleaned):
         raise ApiError(400, "PIN must be 4 to 8 digits")
-    return pin
+    return cleaned
+
+
+def parse_amount_paise(value: object, label: str) -> int:
+    if isinstance(value, bool):
+        raise ApiError(400, f"{label} must be a positive integer")
+    if isinstance(value, int):
+        amount = value
+    elif isinstance(value, str):
+        cleaned = value.strip()
+        if not re.fullmatch(r"\d+", cleaned):
+            raise ApiError(400, f"{label} must be a positive integer")
+        amount = int(cleaned)
+    else:
+        try:
+            amount = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ApiError(400, f"{label} must be a positive integer") from exc
+    if amount <= 0:
+        raise ApiError(400, f"{label} must be a positive integer")
+    return amount
 
 
 def assert_photo_data(photo_data: str | None) -> str | None:
@@ -528,6 +572,21 @@ def student_me():
     return jsonify(public_account(row, balance_paise(db, row["id"])))
 
 
+@app.post("/students/balance")
+@student_auth
+def student_balance():
+    body = json_body()
+    pin = assert_pin(body.get("pin", ""))
+    db = get_db()
+    row = db.execute(
+        "SELECT pin_hash FROM accounts WHERE id = ? AND role = 'student'",
+        (g.auth["sub"],),
+    ).fetchone()
+    if not row or not verify_pin(pin, row["pin_hash"]):
+        raise ApiError(401, "Wrong PIN")
+    return jsonify({"balancePaise": balance_paise(db, g.auth["sub"])})
+
+
 @app.get("/students/directory")
 @student_auth
 def student_directory():
@@ -553,6 +612,117 @@ def student_directory():
             for row in rows
         ]
     })
+
+
+@app.get("/students/chat/<college_id>")
+@student_auth
+def student_chat(college_id: str):
+    friend_id = assert_college_id(college_id)
+    db = get_db()
+    friend = db.execute(
+        """SELECT id, college_id, name, photo_data
+           FROM accounts WHERE college_id = ? AND role = 'student'""",
+        (friend_id,),
+    ).fetchone()
+    if not friend or friend["id"] == g.auth["sub"]:
+        raise ApiError(404, "Student not found")
+
+    messages = db.execute(
+        """SELECT id, sender_account_id, body, created_at
+           FROM chat_messages
+           WHERE (sender_account_id = ? AND recipient_account_id = ?)
+              OR (sender_account_id = ? AND recipient_account_id = ?)
+           ORDER BY created_at, id""",
+        (g.auth["sub"], friend["id"], friend["id"], g.auth["sub"]),
+    ).fetchall()
+    payments = db.execute(
+        """SELECT id, amount_paise, entry_type, note, created_at
+           FROM ledger_entries
+           WHERE account_id = ? AND related_account_id = ?
+             AND entry_type IN (
+               'student_transfer_out', 'student_transfer_in',
+               'nfc_transfer_out', 'nfc_transfer_in'
+             )
+           ORDER BY created_at, id""",
+        (g.auth["sub"], friend["id"]),
+    ).fetchall()
+
+    timeline = [
+        {
+            "id": row["id"],
+            "type": "message",
+            "senderId": row["sender_account_id"],
+            "body": row["body"],
+            "createdAt": row["created_at"],
+        }
+        for row in messages
+    ]
+    timeline.extend(
+        {
+            "id": row["id"],
+            "type": "payment",
+            "direction": "out" if row["entry_type"].endswith("_out") else "in",
+            "amountPaise": abs(row["amount_paise"]),
+            "note": row["note"] or "",
+            "createdAt": row["created_at"],
+        }
+        for row in payments
+    )
+    return jsonify(
+        {
+            "friend": {
+                "collegeId": friend["college_id"],
+                "name": friend["name"],
+                "photoData": friend["photo_data"],
+            },
+            "messages": timeline,
+        }
+    )
+
+
+@app.post("/students/messages")
+@student_auth
+def student_send_message():
+    body = json_body()
+    recipient_id = assert_college_id(body.get("collegeId", ""))
+    message = body.get("message")
+    if not isinstance(message, str):
+        raise ApiError(400, "message is required")
+    message = message.strip()
+    if not message or len(message) > 1000:
+        raise ApiError(400, "message must be 1-1000 characters")
+
+    db = get_db()
+    sender = db.execute(
+        "SELECT id FROM accounts WHERE id = ? AND role = 'student'",
+        (g.auth["sub"],),
+    ).fetchone()
+    recipient = db.execute(
+        "SELECT id FROM accounts WHERE college_id = ? AND role = 'student'",
+        (recipient_id,),
+    ).fetchone()
+    if not sender or not recipient:
+        raise ApiError(404, "Student not found")
+    if sender["id"] == recipient["id"]:
+        raise ApiError(400, "You cannot message yourself")
+
+    created_at = utcnow()
+    message_id = str(uuid.uuid4())
+    db.execute(
+        """INSERT INTO chat_messages
+           (id, sender_account_id, recipient_account_id, body, created_at)
+           VALUES (?, ?, ?, ?, ?)""",
+        (message_id, sender["id"], recipient["id"], message, created_at),
+    )
+    db.commit()
+    return jsonify(
+        {
+            "id": message_id,
+            "senderId": sender["id"],
+            "body": message,
+            "createdAt": created_at,
+        }
+    ), 201
 
 
 @app.post("/students/nfc/session")
@@ -598,13 +768,7 @@ def student_nfc_transfer():
     recipient_token = body.get("recipientToken")
     if not isinstance(recipient_token, str) or not 20 <= len(recipient_token) <= 100:
         raise ApiError(400, "recipientToken is invalid")
-    raw_amount = body.get("amountPaise")
-    try:
-        amount = int(raw_amount)
-    except (TypeError, ValueError) as exc:
-        raise ApiError(400, "amountPaise must be a positive integer") from exc
-    if isinstance(raw_amount, bool) or amount <= 0 or amount != raw_amount:
-        raise ApiError(400, "amountPaise must be a positive integer")
+    amount = parse_amount_paise(body.get("amountPaise"), "amountPaise")
     if amount > 50_000:
         raise ApiError(400, "NFC transfers are limited to ₹500 per tap")
     note = str(body.get("note") or "").strip()
@@ -697,13 +861,7 @@ def student_transfer():
     body = json_body()
     recipient_id = assert_college_id(body.get("collegeId", ""))
     pin = assert_pin(body.get("pin", ""))
-    raw_amount = body.get("amountPaise")
-    try:
-        amount = int(raw_amount)
-    except (TypeError, ValueError) as exc:
-        raise ApiError(400, "amountPaise must be a positive integer") from exc
-    if isinstance(raw_amount, bool) or amount <= 0 or amount != raw_amount:
-        raise ApiError(400, "amountPaise must be a positive integer")
+    amount = parse_amount_paise(body.get("amountPaise"), "amountPaise")
     note = str(body.get("note") or "").strip()
     if len(note) > 100:
         raise ApiError(400, "note must be 100 characters or fewer")

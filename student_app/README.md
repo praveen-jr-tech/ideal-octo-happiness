@@ -12,8 +12,17 @@ flutter run
 
 - Windows / Chrome: `http://127.0.0.1:3000`
 - Android emulator: `http://10.0.2.2:3000`
+- Physical Android phone: `http://<computer-LAN-IP>:3000` (the phone and computer must use the same Wi-Fi)
 
-3. Demo logins after `npm run seed` in `backend`: student `STU1001` / `1234`, canteen `CANTEEN1` / `1234`.
+The default `127.0.0.1` address is only for a server running on the same device; it will not reach your computer from a physical phone. Build/run for a phone with the computer's current LAN IP, for example:
+
+```powershell
+flutter run --dart-define="API_BASE=http://10.0.58.192:3000"
+```
+
+Replace that example IP if the computer's address changes. To update an installed APK, build a new APK with the same define and install that APK on the phone; changing source code does not update an already-installed app.
+
+3. Demo logins after `npm run seed` in `backend`: student `STU1001` / `1234`, canteen `CANTEEN1` / `1234`. The canteen login is also available from the app's login screen. For local admin login, enter ID `ADMIN` and the admin key printed by the local server at startup.
 
 ## Android NFC test transfers
 

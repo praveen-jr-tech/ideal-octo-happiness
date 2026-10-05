@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -51,17 +52,31 @@ class CampusApi {
     return body;
   }
 
+  Future<http.Response> _request(Future<http.Response> Function() send) async {
+    try {
+      return await send().timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      throw ApiException('Campus Wallet API did not respond at $apiBase. Check that the server is running and reachable.');
+    } on http.ClientException {
+      throw ApiException(
+        'Cannot connect to Campus Wallet API at $apiBase. On a physical phone, use your computer LAN address when building the app.',
+      );
+    }
+  }
+
   Future<Map<String, dynamic>> post(String path, Map<String, dynamic> json) async {
-    final res = await http.post(
-      Uri.parse('$apiBase$path'),
-      headers: _headers,
-      body: jsonEncode(json),
+    final res = await _request(
+      () => http.post(
+        Uri.parse('$apiBase$path'),
+        headers: _headers,
+        body: jsonEncode(json),
+      ),
     );
     return _parse(res);
   }
 
   Future<Map<String, dynamic>> get(String path) async {
-    final res = await http.get(Uri.parse('$apiBase$path'), headers: _headers);
+    final res = await _request(() => http.get(Uri.parse('$apiBase$path'), headers: _headers));
     return _parse(res);
   }
 }

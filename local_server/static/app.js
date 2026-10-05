@@ -11,6 +11,8 @@ const merchantScanner = {
 };
 
 let selectedFriend = null;
+let activeChatFriend = null;
+let studentChatEntries = [];
 let friendSearchTimer = 0;
 let studentLedgerEntries = [];
 
@@ -34,8 +36,10 @@ const els = {
 };
 
 function setFlash(msg, kind = 'error') {
-  els.flash.textContent = msg || '';
-  els.flash.hidden = !msg;
+  const isSuccess = kind === 'ok';
+  els.flash.textContent = isSuccess ? '' : (msg || '');
+  els.flash.hidden = isSuccess || !msg;
+  if (els.flash.hidden) return;
   els.flash.style.background = kind === 'ok' ? '#eaf8ee' : '#fff4e5';
   els.flash.style.color = kind === 'ok' ? '#1f6b3d' : '#8a4b12';
   els.flash.style.borderColor = kind === 'ok' ? '#b9d9c3' : '#f0d3a8';
@@ -106,6 +110,30 @@ function ledgerNote(entry) {
   return entry.entry_type === 'test_topup' ? '' : (entry.note || '');
 }
 
+function openBalanceDialog() {
+  document.getElementById('balance-pin-label').hidden = false;
+  document.getElementById('balance-pin').hidden = false;
+  document.getElementById('balance-pin').value = '';
+  document.getElementById('balance-error').hidden = true;
+  document.getElementById('balance-result').hidden = true;
+  document.getElementById('balance-dialog').showModal();
+  document.getElementById('balance-pin').focus();
+}
+
+async function checkStudentBalance(pin) {
+  const result = await api('/students/balance', {
+    method: 'POST',
+    body: { pin },
+  });
+  document.getElementById('balance-pin').value = '';
+  document.getElementById('balance-pin-label').hidden = true;
+  document.getElementById('balance-pin').hidden = true;
+  document.getElementById('balance-error').hidden = true;
+  const balance = document.getElementById('balance-result');
+  balance.textContent = `Available balance: ${fmtRupees(result.balancePaise)}`;
+  balance.hidden = false;
+}
+
 function transactionDate(value) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleString(undefined, {
@@ -130,15 +158,8 @@ async function loadStudentProfile() {
   const profile = await api('/students/me');
   state.account = profile;
   state.role = 'student';
-  document.getElementById('s-who').textContent = `${profile.collegeId} · ${profile.name}`;
-  const photo = document.getElementById('s-profile-photo');
-  photo.src = profile.photoData || '';
-  photo.hidden = !profile.photoData;
   document.getElementById('s-greeting-name').textContent = profile.name.split(' ')[0];
-  document.getElementById('s-bal').textContent = fmtRupees(profile.balancePaise);
-  document.getElementById('s-status').textContent = profile.frozen ? 'Wallet frozen' : 'Ready to pay';
   document.getElementById('s-freeze-label').textContent = profile.frozen ? 'Unfreeze wallet' : 'Freeze wallet';
-  document.getElementById('money-bal').textContent = fmtRupees(profile.balancePaise);
   const headerAvatar = document.getElementById('header-profile-avatar');
   headerAvatar.textContent = (profile.name || profile.collegeId).trim().charAt(0).toUpperCase();
   headerAvatar.style.backgroundImage = profile.photoData ? `url("${profile.photoData}")` : '';
@@ -212,7 +233,7 @@ async function loadStudentFriends(query = '') {
     const button = document.createElement('button');
     button.className = 'friend-profile';
     button.type = 'button';
-    button.setAttribute('aria-label', `Pay ${student.name}`);
+    button.setAttribute('aria-label', `Open chat with ${student.name}`);
 
     if (student.photoData) {
       const photo = document.createElement('img');
@@ -235,7 +256,9 @@ async function loadStudentFriends(query = '') {
     collegeId.className = 'friend-id';
     collegeId.textContent = student.collegeId;
     button.appendChild(collegeId);
-    button.addEventListener('click', () => openFriendPayment(student));
+    button.addEventListener('click', () => {
+      openFriendChat(student).catch((e) => setFlash(e.message));
+    });
     list.appendChild(button);
   }
   document.getElementById('friends-count').textContent = data.students.length ? `${data.students.length} shown` : '';
@@ -297,8 +320,112 @@ function openFriendPayment(student) {
   document.getElementById('payment-amount').focus();
 }
 
+function chatTimestamp(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function renderStudentChat(messages) {
+  const list = document.getElementById('chat-messages');
+  list.replaceChildren();
+  studentChatEntries = [...messages];
+  if (!messages.length) {
+    const empty = document.createElement('p');
+    empty.className = 'chat-empty';
+    empty.textContent = `Say hello to ${activeChatFriend.name} or send them money.`;
+    list.appendChild(empty);
+    return;
+  }
+
+  const timeline = [...studentChatEntries].sort((first, second) =>
+    first.createdAt.localeCompare(second.createdAt) || first.id.localeCompare(second.id));
+  for (const item of timeline) {
+    const line = document.createElement('div');
+    if (item.type === 'payment') {
+      const sent = item.direction === 'out';
+      line.className = `chat-line ${sent ? 'chat-line-sent' : 'chat-line-received'} chat-line-payment`;
+      const card = document.createElement('article');
+      card.className = 'chat-payment-card';
+      const check = document.createElement('span');
+      check.className = 'chat-payment-check';
+      check.setAttribute('aria-hidden', 'true');
+      check.textContent = '✓';
+      const copy = document.createElement('div');
+      copy.className = 'chat-payment-copy';
+      const title = document.createElement('strong');
+      title.textContent = `${sent ? 'Sent' : 'Received'} ${fmtRupees(item.amountPaise)}`;
+      const status = document.createElement('span');
+      status.textContent = sent ? 'Payment sent successfully' : 'Payment received successfully';
+      copy.append(title, status);
+      const time = document.createElement('time');
+      time.textContent = chatTimestamp(item.createdAt);
+      card.append(check, copy, time);
+      line.appendChild(card);
+    } else {
+      const ownMessage = item.senderId === state.account?.id;
+      line.className = `chat-line ${ownMessage ? 'chat-line-sent' : 'chat-line-received'}`;
+      const bubble = document.createElement('article');
+      bubble.className = 'chat-message-bubble';
+      const text = document.createElement('p');
+      text.textContent = item.body;
+      const time = document.createElement('time');
+      time.textContent = chatTimestamp(item.createdAt);
+      bubble.append(text, time);
+      line.appendChild(bubble);
+    }
+    list.appendChild(line);
+  }
+  list.scrollTop = list.scrollHeight;
+}
+
+async function loadStudentChat(student = activeChatFriend) {
+  if (!student) return;
+  const data = await api(`/students/chat/${encodeURIComponent(student.collegeId)}`);
+  activeChatFriend = { ...student, ...data.friend };
+  renderStudentChat(data.messages || []);
+}
+
+async function openFriendChat(student) {
+  activeChatFriend = student;
+  document.getElementById('student-home-content').hidden = true;
+  document.getElementById('student-money-content').hidden = true;
+  document.getElementById('student-chat-content').hidden = false;
+  document.getElementById('chat-friend-name').textContent = student.name;
+  document.getElementById('chat-friend-id').textContent = student.collegeId;
+  const avatar = document.getElementById('chat-friend-avatar');
+  avatar.replaceChildren();
+  if (student.photoData) {
+    const image = document.createElement('img');
+    image.src = student.photoData;
+    image.alt = '';
+    avatar.appendChild(image);
+  } else {
+    avatar.textContent = student.name.trim().charAt(0).toUpperCase();
+  }
+  document.getElementById('chat-error').hidden = true;
+  await loadStudentChat(student);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  document.getElementById('chat-message-input').focus();
+}
+
+async function sendChatMessage(message) {
+  if (!activeChatFriend) throw new Error('Choose a friend to message');
+  const saved = await api('/students/messages', {
+    method: 'POST',
+    body: {
+      collegeId: activeChatFriend.collegeId,
+      message,
+    },
+  });
+  renderStudentChat([...studentChatEntries, { ...saved, type: 'message' }]);
+}
+
 async function sendFriendPayment() {
   if (!selectedFriend) throw new Error('Choose a student first');
+  const recipient = selectedFriend;
   const amount = Number(document.getElementById('payment-amount').value);
   const amountPaise = Math.round(amount * 100);
   if (!Number.isFinite(amount) || amountPaise <= 0 || Math.abs(amount * 100 - amountPaise) > 1e-6) {
@@ -314,12 +441,12 @@ async function sendFriendPayment() {
     },
   });
   document.getElementById('friend-payment-dialog').close();
-  selectedFriend = null;
-  setFlash(`Sent ${fmtRupees(result.amountPaise)} to ${result.recipient.name}.`, 'ok');
   try {
-    await loadStudentProfile();
+    await Promise.all([loadStudentLedger(), loadStudentChat(activeChatFriend)]);
   } catch (e) {
-    setFlash(`Payment sent, but wallet refresh failed: ${e.message}`);
+    const message = `Payment sent to ${recipient.name}, but the chat could not refresh: ${e.message}`;
+    document.getElementById('chat-error').textContent = message;
+    document.getElementById('chat-error').hidden = false;
   }
 }
 
@@ -339,6 +466,7 @@ async function loadMerchantProfile() {
 }
 
 function updateSettings(profile, role) {
+  document.getElementById('settings-balance-row').hidden = role !== 'student';
   const photo = document.getElementById('settings-avatar');
   photo.src = profile.photoData || '';
   photo.hidden = !profile.photoData;
@@ -351,7 +479,6 @@ function updateSettings(profile, role) {
   document.getElementById('settings-account-type').textContent = role === 'student' ? 'Student' : 'Canteen';
   document.getElementById('settings-wallet-status').textContent = profile.frozen ? 'Frozen' : 'Active';
   document.getElementById('settings-wallet-status').classList.toggle('status-frozen', Boolean(profile.frozen));
-  document.getElementById('settings-balance').textContent = fmtRupees(profile.balancePaise);
 }
 
 async function loadMerchantLedger() {
@@ -790,6 +917,10 @@ document.getElementById('s-history-shortcut').addEventListener('click', () => {
   setStudentTab('money');
 });
 
+document.getElementById('campus-art-check-balance').addEventListener('click', openBalanceDialog);
+document.getElementById('check-balance').addEventListener('click', openBalanceDialog);
+document.getElementById('settings-balance-check').addEventListener('click', openBalanceDialog);
+
 document.getElementById('wallet-score-open').addEventListener('click', () => {
   const now = Date.now();
   const recentEntries = studentLedgerEntries.filter((entry) => {
@@ -857,6 +988,7 @@ function setStudentTab(tabName) {
   const showingMoney = tabName === 'money';
   document.getElementById('student-home-content').hidden = showingMoney;
   document.getElementById('student-money-content').hidden = !showingMoney;
+  document.getElementById('student-chat-content').hidden = true;
   document.querySelectorAll('[data-student-tab]').forEach((tab) => {
     tab.classList.toggle('active', tab.dataset.studentTab === tabName);
   });
@@ -864,6 +996,36 @@ function setStudentTab(tabName) {
 }
 
 document.getElementById('money-back').addEventListener('click', () => setStudentTab('home'));
+
+document.getElementById('chat-back').addEventListener('click', () => {
+  activeChatFriend = null;
+  document.getElementById('student-chat-content').hidden = true;
+  setStudentTab('home');
+});
+
+document.getElementById('chat-send-money').addEventListener('click', () => {
+  if (activeChatFriend) openFriendPayment(activeChatFriend);
+});
+
+document.getElementById('chat-compose').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const input = document.getElementById('chat-message-input');
+  const send = document.getElementById('chat-message-send');
+  const error = document.getElementById('chat-error');
+  const message = input.value.trim();
+  if (!message) return;
+  send.disabled = true;
+  error.hidden = true;
+  try {
+    await sendChatMessage(message);
+    input.value = '';
+  } catch (e) {
+    error.textContent = e.message;
+    error.hidden = false;
+  } finally {
+    send.disabled = false;
+  }
+});
 
 document.getElementById('profile-open').addEventListener('click', () => {
   document.getElementById('profile-dialog').showModal();
@@ -928,6 +1090,41 @@ document.getElementById('freeze-cancel').addEventListener('click', () => {
 document.getElementById('freeze-dialog').addEventListener('close', () => {
   document.getElementById('freeze-password').value = '';
   document.getElementById('freeze-error').hidden = true;
+});
+
+document.getElementById('balance-close').addEventListener('click', () => {
+  document.getElementById('balance-dialog').close();
+});
+
+document.getElementById('balance-cancel').addEventListener('click', () => {
+  document.getElementById('balance-dialog').close();
+});
+
+document.getElementById('balance-dialog').addEventListener('close', () => {
+  document.getElementById('balance-pin-label').hidden = false;
+  document.getElementById('balance-pin').hidden = false;
+  document.getElementById('balance-pin').value = '';
+  document.getElementById('balance-error').hidden = true;
+  document.getElementById('balance-result').hidden = true;
+});
+
+document.getElementById('balance-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const pin = document.getElementById('balance-pin');
+  const error = document.getElementById('balance-error');
+  const submit = document.getElementById('balance-submit');
+  submit.disabled = true;
+  error.hidden = true;
+  try {
+    await checkStudentBalance(pin.value);
+  } catch (e) {
+    pin.value = '';
+    error.textContent = e.message;
+    error.hidden = false;
+    pin.focus();
+  } finally {
+    submit.disabled = false;
+  }
 });
 
 document.getElementById('freeze-form').addEventListener('submit', async (event) => {

@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/static/app.css?v=20261004-1" />
+    <link rel="stylesheet" href="/static/app.css?v=20261005-4" />
   </head>
   <body>
     <div class="shell">
@@ -49,59 +49,62 @@
             <span aria-hidden="true">⌕</span>
             <input id="friend-search" type="search" placeholder="Search by name or campus ID" aria-label="Search students by name or campus ID" />
           </div>
-          <div class="campus-hero">
-            <div class="hero-copy">
-              <p class="hero-eyebrow">CAMPUS WALLET</p>
-              <h2>Hey, <span id="s-greeting-name">student</span></h2>
-              <p>Your campus money, all in one place.</p>
-            </div>
-            <div class="campus-art" aria-hidden="true">
-              <span class="art-sun"></span>
-              <span class="art-cloud art-cloud-one"></span>
-              <span class="art-cloud art-cloud-two"></span>
-              <span class="art-hill art-hill-back"></span>
-              <span class="art-hill art-hill-front"></span>
-              <span class="art-building"><i></i><i></i><i></i></span>
-            </div>
-          </div>
-
-          <div class="balance-card" id="student-wallet">
-            <div>
-              <p class="balance-label">Wallet balance</p>
-              <p class="balance" id="s-bal">₹0.00</p>
-              <p id="s-status" class="wallet-status muted"></p>
-            </div>
-            <img id="s-profile-photo" class="profile-photo" alt="Student profile photo" hidden />
-            <span id="s-who" class="wallet-owner muted"></span>
-          </div>
-
-          <div class="quick-actions home-actions">
-            <button class="quick-action" id="s-qr-shortcut" type="button"><span class="quick-icon">▦</span><span>My QR</span></button>
-            <button class="quick-action" id="s-topup" type="button"><span class="quick-icon">＋</span><span>Add money</span></button>
-            <button class="quick-action" id="s-freeze" type="button"><span class="quick-icon">Ⅱ</span><span id="s-freeze-label">Freeze</span></button>
-            <button class="quick-action" id="s-history-shortcut" type="button"><span class="quick-icon">↻</span><span>Activity</span></button>
-          </div>
-
-            <button id="wallet-score-open" class="wallet-score-card" type="button">
-              <span class="wallet-score-icon" aria-hidden="true">★</span>
-              <span class="wallet-score-copy">
-                <strong>Check your wallet score</strong>
-                <span>Free · based on your Campus Wallet activity</span>
-              </span>
-              <span class="wallet-score-arrow" aria-hidden="true">›</span>
-            </button>
-
-            <section class="friends-section">
-            <div class="friends-heading">
-              <div>
-                <h3>People</h3>
-                <p class="section-copy">Choose a campus friend to send money.</p>
+          <div class="student-dashboard-layout">
+            <aside class="student-actions-side" aria-label="Wallet actions">
+              <p class="side-panel-kicker">WALLET ACTIONS</p>
+              <div class="quick-actions home-actions">
+                <button class="quick-action" id="s-topup" type="button"><span class="quick-icon">＋</span><span>Add money</span></button>
+                <button class="quick-action" id="s-qr-shortcut" type="button"><span class="quick-icon">▦</span><span>My QR</span></button>
+                <button class="quick-action" id="s-history-shortcut" type="button"><span class="quick-icon">↻</span><span>Activity</span></button>
+                <button class="quick-action" id="s-freeze" type="button"><span class="quick-icon">Ⅱ</span><span id="s-freeze-label">Freeze</span></button>
               </div>
-              <span id="friends-count" class="friends-count"></span>
+            </aside>
+            <div class="student-dashboard-main">
+              <div class="campus-hero">
+                <div class="hero-copy">
+                  <p class="hero-eyebrow">CAMPUS WALLET</p>
+                  <h2>Hey, <span id="s-greeting-name">student</span></h2>
+                  <p>Your campus money, all in one place.</p>
+                </div>
+                <button id="campus-art-check-balance" class="campus-art" type="button" aria-label="Check wallet balance. Your PIN is required." title="Check balance">
+                  <span class="art-sun"></span>
+                  <span class="art-cloud art-cloud-one"></span>
+                  <span class="art-cloud art-cloud-two"></span>
+                  <span class="art-hill art-hill-back"></span>
+                  <span class="art-hill art-hill-front"></span>
+                  <span class="art-building"><i></i><i></i><i></i></span>
+                  <span class="art-balance-hint">Tap to check balance</span>
+                </button>
+              </div>
+
+              <button id="check-balance" class="balance-reveal-card" type="button">
+                <span class="balance-reveal-icon" aria-hidden="true">₹</span>
+                <span><strong>Check balance</strong><small>Enter your PIN to view it</small></span>
+                <span class="balance-reveal-arrow" aria-hidden="true">›</span>
+              </button>
+
+              <button id="wallet-score-open" class="wallet-score-card" type="button">
+                <span class="wallet-score-icon" aria-hidden="true">★</span>
+                <span class="wallet-score-copy">
+                  <strong>Check your wallet score</strong>
+                  <span>Free · based on your Campus Wallet activity</span>
+                </span>
+                <span class="wallet-score-arrow" aria-hidden="true">›</span>
+              </button>
+
+              <section class="friends-section">
+                <div class="friends-heading">
+                  <div>
+                    <h3>People</h3>
+                    <p class="section-copy">Open a chat to message or pay a campus friend.</p>
+                  </div>
+                  <span id="friends-count" class="friends-count"></span>
+                </div>
+                <div id="friends-list" class="friends-list" aria-live="polite"></div>
+                <p id="friends-empty" class="empty-search" hidden>No students found.</p>
+              </section>
             </div>
-            <div id="friends-list" class="friends-list" aria-live="polite"></div>
-            <p id="friends-empty" class="empty-search" hidden>No students found.</p>
-          </section>
+          </div>
         </div>
 
         <section id="student-money-content" class="money-content" hidden>
@@ -109,10 +112,6 @@
             <button id="money-back" class="back" type="button">← Home</button>
             <h2>Transactions</h2>
             <p>See payments sent, received, and added to your wallet.</p>
-          </div>
-          <div class="balance-card money-balance">
-            <p class="balance-label">Wallet balance</p>
-            <p class="balance" id="money-bal">₹0.00</p>
           </div>
           <div class="transaction-summary" id="transaction-summary"></div>
           <div class="transaction-filters" role="group" aria-label="Filter transactions">
@@ -129,6 +128,26 @@
             <ul id="s-ledger" class="ledger"></ul>
             <p id="transactions-empty" class="empty-search" hidden>No transactions in this category yet.</p>
           </section>
+        </section>
+
+        <section id="student-chat-content" class="student-chat-content" hidden aria-label="Chat">
+          <div class="chat-header">
+            <button id="chat-back" class="back" type="button" aria-label="Back to people">People</button>
+            <div id="chat-friend-avatar" class="chat-friend-avatar" aria-hidden="true"></div>
+            <div class="chat-friend-details">
+              <h2 id="chat-friend-name">Chat</h2>
+              <p id="chat-friend-id"></p>
+            </div>
+            <button id="chat-send-money" class="chat-pay-button" type="button">₹ <span>Send money</span></button>
+          </div>
+          <div id="chat-messages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions text"></div>
+          <p id="chat-error" class="chat-error" role="alert" hidden></p>
+          <form id="chat-compose" class="chat-compose">
+            <label class="visually-hidden" for="chat-message-input">Message</label>
+            <textarea id="chat-message-input" rows="1" maxlength="1000" placeholder="Write a message..." required></textarea>
+            <button id="chat-message-send" type="submit" aria-label="Send message">➤</button>
+          </form>
+          <p class="chat-test-note">Transfers use your wallet PIN. Payments are in local test mode.</p>
         </section>
 
         <nav class="student-bottom-nav" aria-label="Main navigation">
@@ -232,7 +251,7 @@
           <h3>Wallet</h3>
           <dl class="settings-list">
             <div><dt>Status</dt><dd id="settings-wallet-status"></dd></div>
-            <div><dt>Available balance</dt><dd id="settings-balance"></dd></div>
+            <div id="settings-balance-row"><dt>Available balance</dt><dd><button id="settings-balance-check" class="settings-link" type="button">Check with PIN <span aria-hidden="true">›</span></button></dd></div>
           </dl>
         </section>
 
@@ -329,8 +348,28 @@
         </div>
       </form>
     </dialog>
+    <dialog id="balance-dialog" class="app-dialog freeze-dialog" aria-labelledby="balance-title">
+      <form id="balance-form">
+        <div class="dialog-header">
+          <div>
+            <p class="dialog-kicker">SECURITY CHECK</p>
+            <h2 id="balance-title">Check your balance</h2>
+          </div>
+          <button id="balance-close" class="icon-button" type="button" aria-label="Close balance">×</button>
+        </div>
+        <p class="settings-copy">Enter your wallet PIN to view your current balance.</p>
+        <label id="balance-pin-label" for="balance-pin">Password / PIN</label>
+        <input id="balance-pin" type="password" autocomplete="current-password" required />
+        <p id="balance-error" class="dialog-error" role="alert" hidden></p>
+        <p id="balance-result" class="balance-dialog-result" aria-live="polite" hidden></p>
+        <div class="dialog-actions">
+          <button id="balance-cancel" class="ghost" type="button">Cancel</button>
+          <button id="balance-submit" type="submit">Show balance</button>
+        </div>
+      </form>
+    </dialog>
     <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-    <script src="/static/app.js?v=20261004-3"></script>
+    <script src="/static/app.js?v=20261005-4"></script>
   </body>
 </html>
