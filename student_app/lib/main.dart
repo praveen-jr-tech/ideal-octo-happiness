@@ -487,6 +487,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   int selectedTab = 0;
   String _activityFilter = 'All';
   String _activitySearch = '';
+  String _activityPeriod = 'All time';
   bool friendsBusy = false;
   bool nfcAvailable = false;
   bool nfcHostCardEmulationAvailable = false;
@@ -496,7 +497,18 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
 
   String rupees(dynamic paise) => '₹${(Money.paise(paise) / 100).toStringAsFixed(2)}';
 
-  List<dynamic> get _filteredLedger => ledger.where((row) {
+  List<dynamic> get _periodLedger {
+    if (_activityPeriod == 'All time') return ledger;
+    final days = _activityPeriod == '7 days' ? 7 : 30;
+    final now = DateTime.now();
+    final cutoff = now.subtract(Duration(days: days));
+    return ledger.where((row) {
+      final createdAt = DateTime.tryParse('${row['created_at'] ?? ''}');
+      return createdAt != null && !createdAt.isBefore(cutoff) && !createdAt.isAfter(now);
+    }).toList();
+  }
+
+  List<dynamic> get _filteredLedger => _periodLedger.where((row) {
         final amount = Money.paise(row['amount_paise']);
         final matchesDirection = _activityFilter == 'All' ||
             (_activityFilter == 'Money in' && amount >= 0) ||
@@ -1244,8 +1256,9 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   }
 
   Widget _activityContent() {
-    final incomingCount = ledger.where((row) => Money.paise(row['amount_paise']) >= 0).length;
-    final outgoingCount = ledger.length - incomingCount;
+    final periodEntries = _periodLedger;
+    final incomingCount = periodEntries.where((row) => Money.paise(row['amount_paise']) >= 0).length;
+    final outgoingCount = periodEntries.length - incomingCount;
     final entries = _filteredLedger;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1258,7 +1271,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
           spacing: 8,
           children: [
             ChoiceChip(
-              label: Text('All (${ledger.length})'),
+              label: Text('All (${periodEntries.length})'),
               selected: _activityFilter == 'All',
               onSelected: (_) => setState(() => _activityFilter = 'All'),
             ),
@@ -1272,6 +1285,20 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
               selected: _activityFilter == 'Money out',
               onSelected: (_) => setState(() => _activityFilter = 'Money out'),
             ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        const Text('Date range', style: TextStyle(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          children: [
+            for (final period in ['All time', '7 days', '30 days'])
+              ChoiceChip(
+                label: Text(period),
+                selected: _activityPeriod == period,
+                onSelected: (_) => setState(() => _activityPeriod = period),
+              ),
           ],
         ),
         const SizedBox(height: 8),
@@ -1301,7 +1328,9 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                         ? 'No wallet activity yet.'
                         : _activitySearch.trim().isNotEmpty
                             ? 'No transactions match your search.'
-                            : 'No ${_activityFilter.toLowerCase()} transactions yet.',
+                            : _activityPeriod == 'All time'
+                                ? 'No ${_activityFilter.toLowerCase()} transactions yet.'
+                                : 'No ${_activityFilter.toLowerCase()} transactions in the last $_activityPeriod.',
                   ),
                 )
               : Column(

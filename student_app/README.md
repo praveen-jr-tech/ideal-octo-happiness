@@ -22,7 +22,7 @@ flutter run --dart-define="API_BASE=http://10.0.58.192:3000"
 
 Replace that example IP if the computer's address changes. To update an installed APK, build a new APK with the same define and install that APK on the phone; changing source code does not update an already-installed app.
 
-The student app includes PIN-gated balance checks, a reordered wallet-action panel, friend search and chat, test-wallet transfers from within a chat, and Activity filters for incoming and outgoing transactions. Chat requires the matching Flask API endpoints in `local_server/app.py`.
+The student app includes PIN-gated balance checks, a reordered wallet-action panel, friend search and chat, test-wallet transfers from within a chat, and Activity search and filters for transaction direction and date range. Chat requires the matching Flask API endpoints in `local_server/app.py`.
 
 To build and install an updated Android APK from this directory:
 
