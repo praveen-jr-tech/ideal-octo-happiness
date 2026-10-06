@@ -486,6 +486,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   Timer? _friendSearchTimer;
   int selectedTab = 0;
   String _activityFilter = 'All';
+  String _activitySearch = '';
   bool friendsBusy = false;
   bool nfcAvailable = false;
   bool nfcHostCardEmulationAvailable = false;
@@ -497,9 +498,19 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
 
   List<dynamic> get _filteredLedger => ledger.where((row) {
         final amount = Money.paise(row['amount_paise']);
-        return _activityFilter == 'All' ||
+        final matchesDirection = _activityFilter == 'All' ||
             (_activityFilter == 'Money in' && amount >= 0) ||
             (_activityFilter == 'Money out' && amount < 0);
+        if (!matchesDirection) return false;
+        final query = _activitySearch.trim().toLowerCase();
+        if (query.isEmpty) return true;
+        final searchableText = [
+          ledgerTypeLabel(row['entry_type']),
+          ledgerNote(row),
+          '${row['created_at'] ?? ''}',
+          rupees(amount.abs()),
+        ].join(' ').toLowerCase();
+        return searchableText.contains(query);
       }).toList();
 
   Future<void> showWalletScore() async {
@@ -1264,12 +1275,34 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
           ],
         ),
         const SizedBox(height: 8),
+        TextField(
+          decoration: InputDecoration(
+            labelText: 'Search transactions',
+            hintText: 'Search type, note, date, or amount',
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: _activitySearch.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Clear search',
+                    onPressed: () => setState(() => _activitySearch = ''),
+                    icon: const Icon(Icons.clear),
+                  ),
+          ),
+          onChanged: (value) => setState(() => _activitySearch = value),
+        ),
+        const SizedBox(height: 8),
         Card(
           margin: EdgeInsets.zero,
           child: entries.isEmpty
               ? Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Text(ledger.isEmpty ? 'No wallet activity yet.' : 'No ${_activityFilter.toLowerCase()} transactions yet.'),
+                  child: Text(
+                    ledger.isEmpty
+                        ? 'No wallet activity yet.'
+                        : _activitySearch.trim().isNotEmpty
+                            ? 'No transactions match your search.'
+                            : 'No ${_activityFilter.toLowerCase()} transactions yet.',
+                  ),
                 )
               : Column(
                   children: [
