@@ -22,6 +22,18 @@ flutter run --dart-define="API_BASE=http://10.0.58.192:3000"
 
 Replace that example IP if the computer's address changes. To update an installed APK, build a new APK with the same define and install that APK on the phone; changing source code does not update an already-installed app.
 
+The student app includes PIN-gated balance checks, a reordered wallet-action panel, friend search and chat, and test-wallet transfers from within a chat. Chat requires the matching Flask API endpoints in `local_server/app.py`.
+
+To build and install an updated Android APK from this directory:
+
+```powershell
+flutter pub get
+flutter build apk --release --dart-define="API_BASE=http://<computer-LAN-IP>:3000"
+adb install -r build\app\outputs\flutter-apk\app-release.apk
+```
+
+Use the same computer LAN address that the phone can reach on Wi-Fi. The Android version is incremented in `pubspec.yaml` so the updated APK can replace an older installation.
+
 3. Demo logins after `npm run seed` in `backend`: student `STU1001` / `1234`, canteen `CANTEEN1` / `1234`. The canteen login is also available from the app's login screen. For local admin login, enter ID `ADMIN` and the admin key printed by the local server at startup.
 
 ## Android NFC test transfers
