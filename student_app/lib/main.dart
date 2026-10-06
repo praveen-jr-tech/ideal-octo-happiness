@@ -485,6 +485,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   Timer? _receiveExpiryTimer;
   Timer? _friendSearchTimer;
   int selectedTab = 0;
+  String _activityFilter = 'All';
   bool friendsBusy = false;
   bool nfcAvailable = false;
   bool nfcHostCardEmulationAvailable = false;
@@ -493,6 +494,13 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   bool receivingByNfc = false;
 
   String rupees(dynamic paise) => '₹${(Money.paise(paise) / 100).toStringAsFixed(2)}';
+
+  List<dynamic> get _filteredLedger => ledger.where((row) {
+        final amount = Money.paise(row['amount_paise']);
+        return _activityFilter == 'All' ||
+            (_activityFilter == 'Money in' && amount >= 0) ||
+            (_activityFilter == 'Money out' && amount < 0);
+      }).toList();
 
   Future<void> showWalletScore() async {
     final cutoff = DateTime.now().toUtc().subtract(const Duration(days: 30));
@@ -1225,6 +1233,9 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   }
 
   Widget _activityContent() {
+    final incomingCount = ledger.where((row) => Money.paise(row['amount_paise']) >= 0).length;
+    final outgoingCount = ledger.length - incomingCount;
+    final entries = _filteredLedger;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1232,13 +1243,37 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
         const SizedBox(height: 4),
         const Text('Your wallet transaction history'),
         const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          children: [
+            ChoiceChip(
+              label: Text('All (${ledger.length})'),
+              selected: _activityFilter == 'All',
+              onSelected: (_) => setState(() => _activityFilter = 'All'),
+            ),
+            ChoiceChip(
+              label: Text('Money in ($incomingCount)'),
+              selected: _activityFilter == 'Money in',
+              onSelected: (_) => setState(() => _activityFilter = 'Money in'),
+            ),
+            ChoiceChip(
+              label: Text('Money out ($outgoingCount)'),
+              selected: _activityFilter == 'Money out',
+              onSelected: (_) => setState(() => _activityFilter = 'Money out'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
         Card(
           margin: EdgeInsets.zero,
-          child: ledger.isEmpty
-              ? const Padding(padding: EdgeInsets.all(16), child: Text('No wallet activity yet.'))
+          child: entries.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(ledger.isEmpty ? 'No wallet activity yet.' : 'No ${_activityFilter.toLowerCase()} transactions yet.'),
+                )
               : Column(
                   children: [
-                    for (final row in ledger)
+                    for (final row in entries)
                       ListTile(
                         leading: CircleAvatar(
                           backgroundColor: row['amount_paise'] is num && (row['amount_paise'] as num) < 0
