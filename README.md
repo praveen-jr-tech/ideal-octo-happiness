@@ -15,5 +15,8 @@
 
 Test mode only: no real money until RBI wallet rules are reviewed.
 
+Card levels, server-side fees, membership expiry, and the still-pending event/team
+benefits are documented in [`docs/CARD_LEVELS.md`](docs/CARD_LEVELS.md).
+
 ## Project docs
 Full agent brief, decisions, and install notes (Windows-friendly) are in `docs/`. Keep this runbook; do not load real student data or payment keys.

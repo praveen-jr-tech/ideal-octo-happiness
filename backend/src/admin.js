@@ -140,6 +140,7 @@ function mountAdminRoutes(app, { pool }) {
     asyncHandler(async (req, res) => {
       const { rows } = await pool.query(
         `SELECT a.id, a.role, a.college_id, a.name, a.photo_data, a.frozen, a.created_at,
+                a.card_level, a.card_level_expires_at,
                 COALESCE(SUM(l.amount_paise), 0)::bigint AS balance_paise
          FROM accounts a
          LEFT JOIN ledger_entries l ON l.account_id = a.id
@@ -154,6 +155,8 @@ function mountAdminRoutes(app, { pool }) {
           name: r.name,
           photoData: r.photo_data || null,
           frozen: r.frozen,
+          cardLevel: r.role === "student" ? r.card_level : null,
+          cardLevelExpiresAt: r.card_level_expires_at,
           balancePaise: Number(r.balance_paise),
           createdAt: r.created_at,
         })),
@@ -165,7 +168,7 @@ function mountAdminRoutes(app, { pool }) {
     "/admin/ledger",
     asyncHandler(async (req, res) => {
       const { rows } = await pool.query(
-        `SELECT l.id, l.amount_paise, l.entry_type, l.note, l.created_at,
+        `SELECT l.id, l.amount_paise, l.cost_paise, l.entry_type, l.note, l.created_at,
                 a.college_id, a.role
          FROM ledger_entries l
          JOIN accounts a ON a.id = l.account_id

@@ -6,6 +6,13 @@ const { adminRequired } = require("./auth");
 const { mountStudentRoutes } = require("./students");
 const { mountMerchantRoutes } = require("./merchants");
 const { mountAdminRoutes } = require("./admin");
+const {
+  mountAdminCardLevelRoutes,
+  mountStudentCardLevelRoutes,
+} = require("./card_levels");
+const { mountAdminEventRoutes, mountStudentEventRoutes } = require("./events");
+const { mountEmailVerificationRoutes } = require("./email_verification");
+const { mountStudentTeamRoutes } = require("./team_paybacks");
 
 function createApp({ pool, config }) {
   const app = express();
@@ -25,10 +32,16 @@ function createApp({ pool, config }) {
   });
 
   mountStudentRoutes(app, { pool, config });
+  mountEmailVerificationRoutes(app, { pool, config });
+  mountStudentCardLevelRoutes(app, { pool, config });
+  mountStudentEventRoutes(app, { pool, config });
+  mountStudentTeamRoutes(app, { pool, config });
   mountMerchantRoutes(app, { pool, config });
 
   app.use("/admin", adminRequired(config));
   mountAdminRoutes(app, { pool, config });
+  mountAdminCardLevelRoutes(app, { pool });
+  mountAdminEventRoutes(app, { pool, config });
 
   app.use((_req, _res, next) => next(new HttpError(404, "Not found")));
 
@@ -38,7 +51,11 @@ function createApp({ pool, config }) {
     if (status === 500) {
       console.error(err);
     }
-    res.status(status).json({ error: message, testMode: config.testMode });
+    res.status(status).json({
+      error: message,
+      ...(err.retryAt ? { retryAt: err.retryAt, retryAfterSeconds: err.retryAfterSeconds } : {}),
+      testMode: config.testMode,
+    });
   });
 
   return app;

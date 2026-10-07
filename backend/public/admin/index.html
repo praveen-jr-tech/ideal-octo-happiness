@@ -101,8 +101,38 @@
             <div class="row"><button id="saveAccount">Save account</button><button id="cancelEdit" hidden>Cancel edit</button></div>
           </div>
         </section>
+        <section class="panel">
+          <h2>Card-level prices and fees</h2>
+          <p>Changes apply to future quotes and purchases. Prices are in rupees; fee rates are percentages.</p>
+          <div class="account-form">
+            <label>FENWICK semester price (₹) <input id="fenwickSemester" type="number" min="0" step="0.01" /></label>
+            <label>FENWICK yearly price (₹) <input id="fenwickYear" type="number" min="0" step="0.01" /></label>
+            <label>EMBERFALL first year (₹) <input id="emberfallFirst" type="number" min="0" step="0.01" /></label>
+            <label>EMBERFALL renewal (₹) <input id="emberfallRenewal" type="number" min="0" step="0.01" /></label>
+            <label>FENWICK friend transfer fee (%) <input id="fenwickTransferFee" type="number" min="0" max="100" step="0.01" /></label>
+            <label>STARROW withdrawal fee (%) <input id="starrowWithdrawalFee" type="number" min="0" max="100" step="0.01" /></label>
+            <label>FENWICK withdrawal fee (%) <input id="fenwickWithdrawalFee" type="number" min="0" max="100" step="0.01" /></label>
+            <label>Minimum fee (₹) <input id="minimumFee" type="number" min="0" step="0.01" /></label>
+            <label>Maximum fee (₹) <input id="maximumFee" type="number" min="0" step="0.01" /></label>
+            <label>EMBERFALL grace period (days) <input id="emberfallGraceDays" type="number" min="7" max="15" step="1" /></label>
+            <div class="row"><button id="saveCardSettings">Save card-level settings</button></div>
+          </div>
+        </section>
+        <section class="panel">
+          <h2>Team invitation rate limits</h2>
+          <p>Limits use rolling windows and apply across server restarts.</p>
+          <div class="account-form">
+            <label>Per leader / rolling hour <input id="teamInvitesLeaderHour" type="number" min="1" /></label>
+            <label>Per leader / rolling day <input id="teamInvitesLeaderDay" type="number" min="1" /></label>
+            <label>Same leader + recipient / hour <input id="teamInvitesPairHour" type="number" min="1" /></label>
+            <label>Same recipient cooldown (seconds) <input id="teamInviteCooldown" type="number" min="1" /></label>
+            <label>Per recipient / rolling day <input id="teamInvitesRecipientDay" type="number" min="1" /></label>
+            <label>Per IP / rolling hour <input id="teamInvitesIpHour" type="number" min="1" /></label>
+            <div class="row"><button id="saveTeamInviteSettings">Save invitation limits</button></div>
+          </div>
+        </section>
         <h2>Accounts</h2>
-        <div style="overflow-x:auto"><table><thead><tr><th>Photo</th><th>Type</th><th>ID</th><th>Name</th><th>Frozen</th><th>Balance</th><th></th></tr></thead><tbody id="accounts"></tbody></table></div>
+        <div style="overflow-x:auto"><table><thead><tr><th>Photo</th><th>Type</th><th>ID</th><th>Name</th><th>Card level</th><th>Card expiry</th><th>Frozen</th><th>Balance</th><th></th></tr></thead><tbody id="accounts"></tbody></table></div>
         <h2>Recent ledger</h2>
         <div style="overflow-x:auto"><table><thead><tr><th>When</th><th>Account</th><th>Type</th><th>Paise</th><th>Note</th></tr></thead><tbody id="ledger"></tbody></table></div>
       </section>
@@ -132,6 +162,8 @@
         const status = document.getElementById("status");
         status.textContent = "";
         try {
+          await loadCardSettings();
+          await loadTeamInviteSettings();
           const summary = await api("/admin/summary");
           document.getElementById("summary").innerHTML = [
             ["Students", summary.students],
@@ -151,6 +183,8 @@
                 <td>${a.role === "merchant" ? "Canteen" : "Student"}</td>
                 <td>${esc(a.collegeId)}</td>
                 <td>${esc(a.name)}</td>
+                <td>${a.role === "student" ? esc(a.cardLevel || "STARROW") : "—"}</td>
+                <td>${a.cardLevelExpiresAt ? new Date(a.cardLevelExpiresAt).toLocaleDateString() : "—"}</td>
                 <td>${a.frozen ? "yes" : "no"}</td>
                 <td>${rupees(a.balancePaise)}</td>
                 <td><button data-edit="${esc(a.collegeId)}">Edit</button> <button data-id="${esc(a.collegeId)}" data-frozen="${a.frozen ? "0" : "1"}">${a.frozen ? "Unfreeze" : "Freeze"}</button></td>
@@ -163,7 +197,7 @@
               (e) => `<tr>
                 <td>${new Date(e.created_at).toLocaleString()}</td>
                 <td>${e.college_id} (${e.role})</td>
-                <td>${e.entry_type === "test_topup" ? "Top-up" : esc(e.entry_type)}</td>
+                <td>${e.entry_type === "test_topup" ? "Top-up" : e.entry_type === "card_membership_fee" ? "Card membership" : e.entry_type === "transfer_fee" ? "Transfer fee" : esc(e.entry_type)}</td>
                 <td>${e.amount_paise}</td>
                 <td>${e.entry_type === "test_topup" ? "" : e.note || ""}</td>
               </tr>`
@@ -172,6 +206,32 @@
         } catch (err) {
           status.textContent = err.message;
         }
+      }
+
+      async function loadCardSettings() {
+        const { editable } = await api("/admin/card-level-settings");
+        const currency = (paise) => (Number(paise) / 100).toFixed(2);
+        const percentage = (basisPoints) => (Number(basisPoints) / 100).toFixed(2);
+        document.getElementById("fenwickSemester").value = currency(editable.fenwick_semester_price_paise);
+        document.getElementById("fenwickYear").value = currency(editable.fenwick_year_price_paise);
+        document.getElementById("emberfallFirst").value = currency(editable.emberfall_first_year_price_paise);
+        document.getElementById("emberfallRenewal").value = currency(editable.emberfall_renewal_price_paise);
+        document.getElementById("fenwickTransferFee").value = percentage(editable.fenwick_transfer_fee_bps);
+        document.getElementById("starrowWithdrawalFee").value = percentage(editable.starrow_withdrawal_fee_bps);
+        document.getElementById("fenwickWithdrawalFee").value = percentage(editable.fenwick_withdrawal_fee_bps);
+        document.getElementById("minimumFee").value = currency(editable.minimum_fee_paise);
+        document.getElementById("maximumFee").value = currency(editable.maximum_fee_paise);
+        document.getElementById("emberfallGraceDays").value = editable.emberfall_grace_days;
+      }
+
+      async function loadTeamInviteSettings() {
+        const { editable } = await api("/admin/team-invite-settings");
+        document.getElementById("teamInvitesLeaderHour").value = editable.team_invites_per_leader_hour;
+        document.getElementById("teamInvitesLeaderDay").value = editable.team_invites_per_leader_day;
+        document.getElementById("teamInvitesPairHour").value = editable.team_invites_per_recipient_leader_hour;
+        document.getElementById("teamInviteCooldown").value = editable.team_invite_recipient_cooldown_seconds;
+        document.getElementById("teamInvitesRecipientDay").value = editable.team_invites_per_recipient_day;
+        document.getElementById("teamInvitesIpHour").value = editable.team_invites_per_ip_hour;
       }
 
       function resetForm() {
@@ -262,6 +322,53 @@
         } catch (err) { document.getElementById("status").textContent = err.message; }
       };
       document.getElementById("cancelEdit").onclick = resetForm;
+      document.getElementById("saveCardSettings").onclick = async () => {
+        const status = document.getElementById("status");
+        const rupeesToPaise = (id) => Math.round(Number(document.getElementById(id).value) * 100);
+        const percentToBasisPoints = (id) => Math.round(Number(document.getElementById(id).value) * 100);
+        const body = {
+          fenwick_semester_price_paise: rupeesToPaise("fenwickSemester"),
+          fenwick_year_price_paise: rupeesToPaise("fenwickYear"),
+          emberfall_first_year_price_paise: rupeesToPaise("emberfallFirst"),
+          emberfall_renewal_price_paise: rupeesToPaise("emberfallRenewal"),
+          fenwick_transfer_fee_bps: percentToBasisPoints("fenwickTransferFee"),
+          starrow_withdrawal_fee_bps: percentToBasisPoints("starrowWithdrawalFee"),
+          fenwick_withdrawal_fee_bps: percentToBasisPoints("fenwickWithdrawalFee"),
+          minimum_fee_paise: rupeesToPaise("minimumFee"),
+          maximum_fee_paise: rupeesToPaise("maximumFee"),
+          emberfall_grace_days: Number(document.getElementById("emberfallGraceDays").value),
+        };
+        document.getElementById("saveTeamInviteSettings").onclick = async () => {
+          const status = document.getElementById("status");
+          const value = (id) => Number(document.getElementById(id).value);
+          const body = {
+            team_invites_per_leader_hour: value("teamInvitesLeaderHour"),
+            team_invites_per_leader_day: value("teamInvitesLeaderDay"),
+            team_invites_per_recipient_leader_hour: value("teamInvitesPairHour"),
+            team_invite_recipient_cooldown_seconds: value("teamInviteCooldown"),
+            team_invites_per_recipient_day: value("teamInvitesRecipientDay"),
+            team_invites_per_ip_hour: value("teamInvitesIpHour"),
+          };
+          try {
+            await api("/admin/team-invite-settings", { method: "PUT", body: JSON.stringify(body) });
+            status.className = "";
+            status.textContent = "Team invitation limits saved.";
+            await loadTeamInviteSettings();
+          } catch (err) {
+            status.className = "err";
+            status.textContent = err.message;
+          }
+        };
+        try {
+          await api("/admin/card-level-settings", { method: "PUT", body: JSON.stringify(body) });
+          status.className = "";
+          status.textContent = "Card-level settings saved.";
+          await loadCardSettings();
+        } catch (err) {
+          status.className = "err";
+          status.textContent = err.message;
+        }
+      };
       document.getElementById("saveAccount").onclick = async () => {
         const body = {
           collegeId: document.getElementById("accountId").value.trim(),

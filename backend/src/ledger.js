@@ -8,11 +8,21 @@ async function getBalancePaise(client, accountId) {
   return Number(rows[0].balance);
 }
 
-async function insertEntry(client, { id, accountId, amountPaise, entryType, relatedAccountId, note }) {
+async function insertEntry(client, {
+  id,
+  accountId,
+  amountPaise,
+  costPaise = 0,
+  entryType,
+  relatedAccountId,
+  teamId,
+  note,
+}) {
   await client.query(
-    `INSERT INTO ledger_entries (id, account_id, amount_paise, entry_type, related_account_id, note)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [id, accountId, amountPaise, entryType, relatedAccountId || null, note || null]
+    `INSERT INTO ledger_entries
+       (id, account_id, amount_paise, cost_paise, entry_type, related_account_id, team_id, note)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [id, accountId, amountPaise, costPaise, entryType, relatedAccountId || null, teamId || null, note || null]
   );
 }
 

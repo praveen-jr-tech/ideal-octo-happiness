@@ -40,12 +40,40 @@ copy .env.example .env
 ```
 
 Edit `.env`: `DATABASE_URL`, `JWT_SECRET`, `ADMIN_KEY`. Keep `TEST_MODE=true`.
+Set `ALLOWED_EMAIL_DOMAINS` to a comma-separated exact college domain allowlist
+(for example, `example.edu`). Test mode falls back to `example.edu` when the
+setting is empty; non-test startup requires an explicit allowlist. Test-mode
+email verification codes and team invitation links are written to the backend
+logger. A non-test deployment must inject an `emailSender`; this repository
+does not configure an SMTP service.
 
 ```bash
 npm install
 npm run seed
 npm start
 ```
+
+The API applies `backend/schema.sql` during startup, including card-level tables
+and safe additive columns. Existing ledger rows are retained; the database
+rejects future ledger-row updates and deletes.
+
+### Backend database integration tests
+
+The integration tests use a local test database named `campus_wallet` and
+refuse to run against a database with a different name. Start PostgreSQL on
+loopback, apply `backend/schema.sql`, then from `backend` set the test URL and
+run the integration suite:
+
+```powershell
+$env:CAMPUS_WALLET_TEST_DATABASE_URL = "postgresql://campus_wallet_test@127.0.0.1:5432/campus_wallet"
+npm run test:integration
+```
+
+The suite registers fictional test students and merchants, exercises test
+top-ups, card membership, email verification, team invitations/paybacks, and QR
+payments, and leaves those test rows in the local database. Keep PostgreSQL
+bound to loopback and do not point this suite at a database containing real
+accounts.
 
 API: http://localhost:3000  
 Health: http://localhost:3000/health  
@@ -114,6 +142,12 @@ then build and run the app as usual.
 - Physical phone: your PC’s LAN IP, and allow that origin through any firewall.
 
 Flow: sign up or log in as `STU1001` → Add ₹100 → copy QR text → log in as canteen `CANTEEN1` → charge.
+
+The Flutter student app also includes card-level membership, college-email
+verification, event registration, team invitations, and the payback tracker.
+See [`CARD_LEVELS.md`](CARD_LEVELS.md) for current rules and remaining
+unimplemented benefits. Keep `TEST_MODE=true`; no bank/UPI payout or Razorpay
+integration is connected.
 
 For NFC testing, run the app on two NFC-capable Android phones; the receiving
 phone must support Host Card Emulation (HCE). Transfers are test-ledger only,

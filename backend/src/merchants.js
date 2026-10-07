@@ -51,10 +51,50 @@ function mountMerchantRoutes(app, { pool, config }) {
     asyncHandler(async (req, res) => {
       const token = String((req.body && req.body.token) || "").trim();
       const amountPaise = Number(req.body && req.body.amountPaise);
+      const paymentId = String((req.body && req.body.paymentId) || "").trim();
       if (!token) throw new HttpError(400, "token is required");
+      if (!/^[A-Za-z0-9_-]{8,100}$/.test(paymentId)) {
+        throw new HttpError(400, "paymentId must be 8-100 letters, digits, underscores, or hyphens");
+      }
+      if (!Number.isSafeInteger(amountPaise) || amountPaise <= 0) {
+        throw new HttpError(400, "amountPaise must be a positive integer");
+      }
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
+        await client.query(
+          "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+          [`qr-payment:${paymentId}`]
+        );
+        const priorPayment = await client.query(
+          `SELECT payment_id, merchant_id, student_id, amount_paise, student_balance_paise
+           FROM qr_payment_requests WHERE payment_id = $1`,
+          [paymentId]
+        );
+        if (priorPayment.rows[0]) {
+          const prior = priorPayment.rows[0];
+          if (
+            prior.merchant_id !== req.auth.sub ||
+            Number(prior.amount_paise) !== amountPaise
+          ) {
+            throw new HttpError(409, "paymentId was already used for a different payment");
+          }
+          const student = await client.query(
+            "SELECT college_id FROM accounts WHERE id = $1 AND role = 'student'",
+            [prior.student_id]
+          );
+          if (!student.rows[0]) throw new HttpError(404, "Student not found");
+          await client.query("COMMIT");
+          return res.json({
+            ok: true,
+            duplicate: true,
+            paymentId: prior.payment_id,
+            chargedPaise: Number(prior.amount_paise),
+            fromCollegeId: student.rows[0].college_id,
+            studentBalancePaise: Number(prior.student_balance_paise),
+            testMode: true,
+          });
+        }
         const merchantRes = await client.query(
           "SELECT * FROM accounts WHERE id = $1 AND role = 'merchant' FOR UPDATE",
           [req.auth.sub]
@@ -69,6 +109,7 @@ function mountMerchantRoutes(app, { pool, config }) {
           [token]
         );
         if (!qrRes.rows[0]) throw new HttpError(400, "Unknown QR token");
+        if (qrRes.rows[0].used_at) throw new HttpError(409, "This QR code has already been used; ask the student to refresh it");
         if (new Date(qrRes.rows[0].expires_at) < new Date()) {
           throw new HttpError(400, "QR expired — ask the student to refresh");
         }
@@ -90,9 +131,34 @@ function mountMerchantRoutes(app, { pool, config }) {
           amountPaise,
           crypto,
         });
+        const consumedQr = await client.query(
+          "UPDATE qr_tokens SET used_at = NOW() WHERE id = $1 AND used_at IS NULL",
+          [qrRes.rows[0].id]
+        );
+        if (consumedQr.rowCount !== 1) {
+          throw new HttpError(409, "This QR code has already been used; ask the student to refresh it");
+        }
+        await client.query(
+          `INSERT INTO qr_payment_requests
+             (payment_id, merchant_id, student_id, qr_token_id, amount_paise,
+              student_balance_paise, debit_entry_id, credit_entry_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [
+            paymentId,
+            merchantRes.rows[0].id,
+            studentLock.rows[0].id,
+            qrRes.rows[0].id,
+            amountPaise,
+            result.studentBalancePaise,
+            result.debitId,
+            result.creditId,
+          ]
+        );
         await client.query("COMMIT");
         res.json({
           ok: true,
+          paymentId,
+          duplicate: false,
           chargedPaise: amountPaise,
           fromCollegeId: studentLock.rows[0].college_id,
           studentBalancePaise: result.studentBalancePaise,
@@ -112,7 +178,7 @@ function mountMerchantRoutes(app, { pool, config }) {
     merchantAuth,
     asyncHandler(async (req, res) => {
       const { rows } = await pool.query(
-        `SELECT id, amount_paise, entry_type, note, created_at
+        `SELECT id, amount_paise, cost_paise, entry_type, note, created_at
          FROM ledger_entries WHERE account_id = $1
          ORDER BY created_at DESC LIMIT 100`,
         [req.auth.sub]

@@ -8,9 +8,11 @@ function createPool(databaseUrl) {
 }
 
 class HttpError extends Error {
-  constructor(status, message) {
+  constructor(status, message, { retryAt, retryAfterSeconds } = {}) {
     super(message);
     this.status = status;
+    this.retryAt = retryAt;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
