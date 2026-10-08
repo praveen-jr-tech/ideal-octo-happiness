@@ -195,7 +195,8 @@ def init_db(conn: sqlite3.Connection) -> None:
           student_id TEXT NOT NULL REFERENCES accounts (id),
           token TEXT NOT NULL UNIQUE,
           expires_at TEXT NOT NULL,
-          created_at TEXT NOT NULL
+          created_at TEXT NOT NULL,
+          used_at TEXT
         );
         CREATE TABLE IF NOT EXISTS nfc_sessions (
           token_hash TEXT PRIMARY KEY,
@@ -223,6 +224,10 @@ def ensure_database() -> None:
         account_columns = {row['name'] for row in conn.execute('PRAGMA table_info(accounts)')}
         if 'photo_data' not in account_columns:
             conn.execute('ALTER TABLE accounts ADD COLUMN photo_data TEXT')
+            conn.commit()
+        qr_columns = {row['name'] for row in conn.execute('PRAGMA table_info(qr_tokens)')}
+        if 'used_at' not in qr_columns:
+            conn.execute('ALTER TABLE qr_tokens ADD COLUMN used_at TEXT')
             conn.commit()
         conn.execute(
             """CREATE TABLE IF NOT EXISTS nfc_sessions (
@@ -1043,6 +1048,9 @@ def merchant_charge():
         raise ApiError(400, "token is required")
     if amount <= 0:
         raise ApiError(400, "amountPaise must be a positive integer")
+    order_note = str(body.get("note") or "").strip()
+    if len(order_note) > 100:
+        raise ApiError(400, "Order note must be 100 characters or fewer")
     db = get_db()
     try:
         db.execute("BEGIN IMMEDIATE")
@@ -1054,6 +1062,8 @@ def merchant_charge():
         qr = db.execute("SELECT * FROM qr_tokens WHERE token = ?", (token,)).fetchone()
         if not qr:
             raise ApiError(400, "Unknown QR token")
+        if qr["used_at"]:
+            raise ApiError(409, "QR already used — ask the student to generate a new QR")
         if qr["expires_at"] < utcnow():
             raise ApiError(400, "QR expired — ask the student to refresh")
         student = db.execute(
@@ -1066,6 +1076,13 @@ def merchant_charge():
         bal = balance_paise(db, student["id"])
         if bal < amount:
             raise ApiError(400, "Insufficient test balance")
+        used_at = utcnow()
+        updated = db.execute(
+            "UPDATE qr_tokens SET used_at = ? WHERE id = ? AND used_at IS NULL",
+            (used_at, qr["id"]),
+        )
+        if updated.rowcount != 1:
+            raise ApiError(409, "QR already used — ask the student to generate a new QR")
         db.execute(
             """INSERT INTO ledger_entries (id, account_id, amount_paise, entry_type, related_account_id, note, created_at)
                VALUES (?, ?, ?, 'qr_payment', ?, ?, ?)""",
@@ -1074,7 +1091,7 @@ def merchant_charge():
                 student["id"],
                 -amount,
                 merchant["id"],
-                f"Pay {merchant['college_id']}",
+                f"Pay {merchant['college_id']}" + (f" · {order_note}" if order_note else ""),
                 utcnow(),
             ),
         )
@@ -1086,7 +1103,7 @@ def merchant_charge():
                 merchant["id"],
                 amount,
                 student["id"],
-                f"From {student['college_id']}",
+                f"From {student['college_id']}" + (f" · {order_note}" if order_note else ""),
                 utcnow(),
             ),
         )
@@ -1111,14 +1128,55 @@ def merchant_charge():
 @app.get("/merchants/ledger")
 @merchant_auth
 def merchant_ledger():
+    period = request.args.get("period", "all")
+    if period not in {"all", "today"}:
+        raise ApiError(400, "period must be all or today")
+    search = request.args.get("search", "").strip()
+    if len(search) > 80:
+        raise ApiError(400, "search must be 80 characters or fewer")
     db = get_db()
+    clauses = ["l.account_id = ?", "l.entry_type = 'qr_sale'"]
+    params: list[str] = [g.auth["sub"]]
+    if period == "today":
+        day_start = datetime.now(timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ).isoformat()
+        clauses.append("l.created_at >= ?")
+        params.append(day_start)
+    if search:
+        pattern = f"%{search}%"
+        clauses.append(
+            "(a.college_id LIKE ? OR a.name LIKE ? OR l.note LIKE ? OR (CAST(l.amount_paise / 100 AS TEXT) || '.' || printf('%02d', l.amount_paise % 100)) LIKE ?)"
+        )
+        params.extend([pattern, pattern, pattern, pattern])
     rows = db.execute(
-        """SELECT id, amount_paise, entry_type, note, created_at
-           FROM ledger_entries WHERE account_id = ?
-           ORDER BY created_at DESC LIMIT 100""",
-        (g.auth["sub"],),
+        f"""SELECT l.id, l.amount_paise, l.entry_type, l.note, l.created_at,
+                   a.college_id AS student_college_id, a.name AS student_name
+            FROM ledger_entries l
+            LEFT JOIN accounts a ON a.id = l.related_account_id
+            WHERE {' AND '.join(clauses)}
+            ORDER BY l.created_at DESC LIMIT 200""",
+        params,
     ).fetchall()
-    return jsonify({"entries": [dict(r) for r in rows]})
+    return jsonify({"entries": [dict(r) for r in rows], "limit": 200})
+
+
+@app.get("/merchants/summary")
+@merchant_auth
+def merchant_summary():
+    db = get_db()
+    day_start = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ).isoformat()
+    row = db.execute(
+        """SELECT COUNT(*) AS sales_count,
+                  COALESCE(SUM(amount_paise), 0) AS gross_paise,
+                  COALESCE(ROUND(AVG(amount_paise)), 0) AS average_paise
+           FROM ledger_entries
+           WHERE account_id = ? AND entry_type = 'qr_sale' AND created_at >= ?""",
+        (g.auth["sub"], day_start),
+    ).fetchone()
+    return jsonify(dict(row))
 
 
 @app.post("/admin/create-merchant")
